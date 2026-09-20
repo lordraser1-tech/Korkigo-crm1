@@ -1,0 +1,190 @@
+// KorkiGO CRM — schemat bazy danych (Faza 1: fundament)
+// Baza: PostgreSQL. ORM: Prisma.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------- KONTA I ROLE ----------
+
+enum Role {
+  ADMIN
+  TEACHER
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  role         Role
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  teacherProfile TeacherProfile?
+
+  @@map("users")
+}
+
+// ---------- NAUCZYCIELE ----------
+
+model TeacherProfile {
+  id             String   @id @default(cuid())
+  userId         String   @unique
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  firstName      String
+  lastName       String
+  phone          String?
+  level          String?  // np. "C1", uprawnienia/certyfikaty
+  ratePerLesson  Decimal  @db.Decimal(10, 2) // stawka WYPŁACANA nauczycielowi — ustala tylko admin
+
+  active         Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  students       Student[]
+  lessons        Lesson[]
+  availabilities Availability[]
+
+  @@map("teacher_profiles")
+}
+
+// Dyspozycyjność — powtarzalne okna czasowe (grafik dyspozycji)
+model Availability {
+  id         String   @id @default(cuid())
+  teacherId  String
+  teacher    TeacherProfile @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+
+  dayOfWeek  Int      // 0 = niedziela ... 6 = sobota
+  startTime  String   // "16:00"
+  endTime    String   // "20:00"
+
+  @@map("availabilities")
+}
+
+// ---------- UCZNIOWIE ----------
+
+enum StudentStatus {
+  ACTIVE
+  PAUSED
+  ENDED
+}
+
+model Student {
+  id              String   @id @default(cuid())
+
+  firstName       String
+  lastName        String
+  contactEmail    String?
+  contactPhone    String?
+
+  // Dane rodzica/opiekuna (jeśli niepełnoletni)
+  parentName      String?
+  parentPhone     String?
+  parentEmail     String?
+
+  languageLevel   String?  // np. "A2"
+  subject         String?  // np. "Polski ogólny", "Polski maturalny"
+  ratePerLesson   Decimal  @db.Decimal(10, 2) // stawka PŁACONA przez ucznia — NIGDY nie zwracaj w API dla roli TEACHER
+
+  status          StudentStatus @default(ACTIVE)
+
+  teacherId       String?
+  teacher         TeacherProfile? @relation(fields: [teacherId], references: [id])
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  lessons         Lesson[]
+  notes           LessonNote[]
+  knowledgeBase   KnowledgeBaseEntry[]
+
+  @@map("students")
+}
+
+// ---------- KALENDARZ LEKCJI ----------
+
+enum LessonType {
+  RECURRING
+  ONE_OFF
+}
+
+enum LessonStatus {
+  SCHEDULED
+  COMPLETED
+  CANCELLED
+  NO_SHOW
+}
+
+model Lesson {
+  id               String   @id @default(cuid())
+
+  studentId        String
+  student          Student  @relation(fields: [studentId], references: [id])
+
+  teacherId        String
+  teacher          TeacherProfile @relation(fields: [teacherId], references: [id])
+
+  scheduledAt      DateTime
+  durationMinutes  Int      @default(60)
+
+  type             LessonType
+  seriesId         String?  // wspólny identyfikator dla lekcji cyklicznych z jednego wzorca
+  status           LessonStatus @default(SCHEDULED)
+
+  googleEventId    String?  // zarezerwowane pod przyszłą synchronizację z Google Calendar
+
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  note             LessonNote?
+
+  @@map("lessons")
+}
+
+// ---------- NOTATKI Z LEKCJI ----------
+// Szablon: co było / jak poszło / jaki cel / co dalej
+
+model LessonNote {
+  id          String   @id @default(cuid())
+  lessonId    String   @unique
+  lesson      Lesson   @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  studentId   String
+  student     Student  @relation(fields: [studentId], references: [id])
+
+  whatWeDid   String   @db.Text
+  howItWent   String   @db.Text
+  goal        String   @db.Text
+  nextSteps   String   @db.Text
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("lesson_notes")
+}
+
+// ---------- BAZA WIEDZY (per uczeń) ----------
+
+model KnowledgeBaseEntry {
+  id         String   @id @default(cuid())
+  studentId  String
+  student    Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  title      String
+  content    String   @db.Text
+
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@map("knowledge_base_entries")
+}
+
+// ---------- ZAREZERWOWANE NA KOLEJNE FAZY (jeszcze nie tworzymy) ----------
+// Faza 2: Payment, Invoice (numeracja automatyczna, status: paid/overdue)
+// Faza 3: NdgQuarter (limit ustawowy, przeliczenia kwartalne), BusinessSwitch
+// Faza 4: wsparcie AI przy notatkach — nie wymaga zmian w schemacie, tylko w warstwie aplikacji

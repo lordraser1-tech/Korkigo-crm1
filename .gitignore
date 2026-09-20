@@ -1,0 +1,16 @@
+node_modules/
+.next/
+out/
+build/
+.env
+.env*.local
+*.log
+npm-debug.log*
+.DS_Store
+next-env.d.ts
+.vercel
+*.tsbuildinfo
+coverage/
+
+# lokalna konfiguracja testów
+.env.test
