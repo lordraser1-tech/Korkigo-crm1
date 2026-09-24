@@ -50,6 +50,7 @@ jest jedynym zabezpieczeniem.
 | Stawka ucznia | ustawia ręcznie | nie widzi i nie ustawia (`403`) |
 | Rachunki, wpłaty, salda | pełny dostęp | `403` — widzi wyłącznie flagę „Rozliczenia OK / Zaległość”, bez kwot |
 | Grafik i dyspozycyjność | wszyscy nauczyciele, z filtrem | tylko własny grafik — cudze `teacherId` jest ignorowane |
+| Moduł NDG i statystyki | pełny dostęp | `403` na całym module |
 | Status płatności lekcji | ze wskazaniem rachunku | sam status (opłacona / do zapłaty / po terminie), bez numeru i kwoty |
 | Tryb rozliczeń ucznia | ustawia | nie widzi i nie zmienia (`403`) |
 | Nauczyciele | pełna lista i dane | tylko własny profil (`404` na cudzy) |
@@ -98,6 +99,49 @@ Zasady, których pilnuje warstwa serwisowa (`src/lib/services/billing.ts`):
 Wydruk: `/admin/rachunki/{id}` ma widok dokumentu i przycisk „Drukuj” —
 nawigacja jest ukrywana przez `@media print`.
 
+## Limit NDG i statystyki finansowe
+
+Moduł `/admin/ndg` pilnuje limitu przychodu w działalności nierejestrowanej
+i liczy statystyki finansowe.
+
+> **To narzędzie pomocnicze, nie doradztwo podatkowe.** Aplikacja nie zna
+> przepisów — liczy to, co jej wpiszesz. Kwota limitu, okres rozliczenia
+> i podstawa przychodu są ustawieniami; potwierdź je z księgowym przed użyciem
+> w rozliczeniach. W kodzie nie ma żadnej zaszytej kwoty ani stawki.
+
+Jak to liczy:
+
+- **kwoty limitu mają historię obowiązywania** (`NdgMonthlyLimit`): limit
+  miesięczny obowiązuje od wskazanego miesiąca do kolejnego wpisu, a **limit
+  kwartału to suma limitów jego miesięcy** — dzięki temu zmiana kwoty w trakcie
+  kwartału liczy się poprawnie,
+- brak kwoty dla któregokolwiek miesiąca okresu daje status `UNKNOWN`, a nie
+  zmyśloną liczbę,
+- **podstawa przychodu** jest przełącznikiem: należny (z wystawionych rachunków,
+  bez anulowanych) albo kasowy (z wpłat),
+- **prognoza**: średnia dzienna z dotychczasowej części okresu, przewidywany
+  przychód na koniec i data wyczerpania limitu przy obecnym tempie.
+
+Progi i ostrzeżenie:
+
+| Status | Próg | Gdzie widać |
+| --- | --- | --- |
+| `OK` | < 70% | metr na stronie modułu |
+| `WATCH` | ≥ 70% | pas u góry strony |
+| `WARNING` | ≥ próg ostrzeżenia (domyślnie **90%**) | pas u góry: modułu, pulpitu i ekranu rachunków |
+| `EXCEEDED` | ≥ 100% | jw., w wariancie krytycznym |
+
+Próg ostrzeżenia jest ustawieniem (10–100%). Każdy status niesie ikonę
+i podpis — kolor nigdy nie jest jedynym nośnikiem znaczenia.
+
+### Wyłączenie po założeniu firmy
+
+Przełącznik **„Pilnuj limitu działalności nierejestrowanej”** (`NdgSettings.enabled`)
+wyłącza całą część limitową: znika metr, tabela okresów i pas ostrzegawczy,
+a moduł zostaje jako **statystyki finansowe** — miesiąc / kwartał / rok,
+z rozbiciem na każdego nauczyciela (lekcje, przychód, koszt wypłat, marża).
+Datę przejścia na działalność rejestrowaną można zapisać w ustawieniach.
+
 ## Grafik i dyspozycja
 
 Zakładka `Grafik i dyspozycja` (`/nauczyciel/grafik`, `/admin/grafik`) pokazuje
@@ -141,7 +185,7 @@ src/
   lib/
     auth.ts            # Actor (kto pyta) + strażnicy ról
     services/          # LOGIKA I UPRAWNIENIA: students, teachers, lessons,
-                       # finance, billing, schedule
+                       # finance, billing, schedule, ndg
     validation.ts      # schematy Zod
     datetime.ts        # czas warszawski <-> UTC, lekcje cykliczne
 tests/                 # testy uprawnień i konwersji czasu
@@ -171,6 +215,7 @@ Wszystkie endpointy wymagają ciasteczka sesji i same sprawdzają rolę.
 | `GET` | `/api/receivables` | salda i zaległości wszystkich uczniów |
 | `GET`/`PUT` | `/api/billing-settings` | dane wystawcy i termin płatności |
 | `GET` | `/api/schedule` | `?week=RRRR-MM-DD&teacherId=` — grafik tygodnia; nauczyciel zawsze dostaje własny |
+| `GET` | `/api/ndg` | `?year=&period=` — przegląd limitu; `?scope=MONTH\|QUARTER\|YEAR` — statystyki finansowe |
 
 Błędy mają kształt `{ "error": { "code", "message" } }`,
 sukces `{ "data": ... }`.
@@ -198,7 +243,9 @@ numerację rachunków (w tym reset miesięczny), zakaz dwukrotnego zafakturowani
 lekcji, salda, zaległości, pakiety przedpłacone i odcięcie nauczyciela od
 rozliczeń. Grafik ma własny zestaw: zawężenie do własnej dyspozycyjności,
 ignorowanie cudzego `teacherId`, wyliczanie wolnych godzin i statusy płatności
-lekcji (także dla pakietów).
+lekcji (także dla pakietów). Moduł NDG ma własny zestaw: sumowanie limitu
+kwartału z limitów miesięcy, zmianę kwoty w trakcie roku, progi ostrzeżeń,
+prognozę, obie podstawy przychodu i pracę po wyłączeniu pilnowania limitu.
 
 Bez `DATABASE_URL` testy integracyjne są pomijane (uruchomią się tylko testy
 konwersji czasu).
@@ -227,8 +274,6 @@ i `secure` w trybie produkcyjnym — wymaga HTTPS.
 
 Z fazy 2 zostały: notatki z lekcji (szablon co było / jak poszło / cel / co
 dalej), baza wiedzy per uczeń i synchronizacja z Google Calendar
-(`Lesson.googleEventId` jest już zarezerwowane). Dalej faza 3 — limit
-działalności nierejestrowanej, eksport ewidencji do PIT-36 i automatyczne
-wezwania do zapłaty (**reguły podatkowe do potwierdzenia z księgowym**) — oraz
-faza 4, czyli wsparcie AI przy notatkach. Pozycje menu oznaczone „wkrótce” są
-miejscami na te moduły.
+(`Lesson.googleEventId` jest już zarezerwowane). Z fazy 3 zostały: eksport
+ewidencji do PIT-36 i automatyczne wezwania do zapłaty (**reguły podatkowe do
+potwierdzenia z księgowym**). Faza 4 to wsparcie AI przy notatkach.

@@ -302,6 +302,52 @@ model BillingSettings {
   @@map("billing_settings")
 }
 
+// ---------- DZIAŁALNOŚĆ NIEREJESTROWANA — LIMIT I STATYSTYKI (Faza 3) ----------
+
+enum NdgPeriodMode {
+  MONTHLY // limit rozliczany miesiąc po miesiącu
+  QUARTERLY // limit rozliczany kwartalnie
+}
+
+enum NdgRevenueBasis {
+  INVOICED // przychód należny — liczony z wystawionych rachunków
+  PAID // ujęcie kasowe — liczone z wpłat
+}
+
+/// Ustawienia modułu NDG. Jeden rekord.
+/// `enabled = false` wyłącza pilnowanie limitu (np. po założeniu firmy) —
+/// moduł zostaje wtedy jako czyste statystyki finansowe.
+model NdgSettings {
+  id                   String          @id @default("singleton")
+  enabled              Boolean         @default(true)
+  mode                 NdgPeriodMode   @default(QUARTERLY)
+  revenueBasis         NdgRevenueBasis @default(INVOICED)
+  /// Próg ostrzeżenia w procentach limitu okresu.
+  warnThresholdPercent Int             @default(90)
+  /// Data przejścia na działalność rejestrowaną — dokumentuje, od kiedy limitu nie liczymy.
+  businessStartedAt    DateTime?
+  note                 String          @default("")
+  updatedAt            DateTime        @updatedAt
+
+  @@map("ndg_settings")
+}
+
+/// Limit miesięczny obowiązujący od podanej daty. Trzymamy historię, bo kwota
+/// zmienia się razem z minimalnym wynagrodzeniem — limit kwartału to suma
+/// limitów jego miesięcy.
+///
+/// UWAGA: kwoty wprowadza administrator. Aplikacja nie zna przepisów i nie
+/// jest doradcą podatkowym — wartości potwierdź z księgowym.
+model NdgMonthlyLimit {
+  id        String   @id @default(cuid())
+  validFrom DateTime @unique
+  amount    Decimal  @db.Decimal(10, 2)
+  note      String   @default("")
+  createdAt DateTime @default(now())
+
+  @@map("ndg_monthly_limits")
+}
+
 // ---------- ZAREZERWOWANE NA KOLEJNE FAZY ----------
-// Faza 3: NdgQuarter (limit ustawowy, przeliczenia kwartalne), BusinessSwitch
+// Faza 3 (dalej): eksport ewidencji do PIT-36, automatyczne wezwania do zapłaty
 // Faza 4: wsparcie AI przy notatkach — nie wymaga zmian w schemacie, tylko w warstwie aplikacji

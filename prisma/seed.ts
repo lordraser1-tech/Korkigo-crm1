@@ -15,6 +15,7 @@ import {
   recordPayment,
   updateBillingSettings,
 } from "../src/lib/services/billing";
+import { createNdgLimit, updateNdgSettings } from "../src/lib/services/ndg";
 import type { AdminActor } from "../src/lib/auth";
 
 const prisma = new PrismaClient();
@@ -259,11 +260,40 @@ function shiftMonthKey(monthKey: string, delta: number): string {
   return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
 }
 
+/**
+ * Demo modułu NDG. Kwota limitu jest PRZYKŁADOWA — w prawdziwym wdrożeniu
+ * wpisuje ją administrator po potwierdzeniu z księgowym.
+ */
+async function seedNdg(admin: AdminActor) {
+  await updateNdgSettings(admin, {
+    enabled: true,
+    mode: "QUARTERLY",
+    revenueBasis: "INVOICED",
+    warnThresholdPercent: 90,
+    note: "Dane demonstracyjne — kwotę limitu potwierdź z księgowym.",
+  });
+
+  const year = toWallClockInput(new Date()).slice(0, 4);
+  try {
+    const limit = await createNdgLimit(admin, {
+      validFrom: `${year}-01`,
+      amount: "500",
+      note: "wartość przykładowa — do potwierdzenia z księgowym",
+    });
+    console.log(
+      `✔ Limit NDG (przykładowy): ${limit.amount.toFixed(2)} zł/mies. od ${limit.validFromMonth}`
+    );
+  } catch {
+    console.log("• Limit NDG już istnieje — pomijam.");
+  }
+}
+
 async function main() {
   const admin = await seedAdmin();
   if (process.env.SEED_DEMO === "true" || process.argv.includes("--demo")) {
     await seedDemo();
     await seedBilling(admin);
+    await seedNdg(admin);
   }
 }
 

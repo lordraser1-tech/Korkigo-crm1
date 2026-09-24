@@ -6,6 +6,8 @@ import {
   type InvoiceFilters,
 } from "@/lib/services/billing";
 import { listStudents } from "@/lib/services/students";
+import { getNdgOverview } from "@/lib/services/ndg";
+import { NdgBanner } from "@/components/ndg-banner";
 import {
   createLessonInvoiceAction,
   createMonthlyInvoiceAction,
@@ -30,13 +32,14 @@ export default async function AdminInvoicesPage({
   const { m, state } = await searchParams;
   const monthKey = /^\d{4}-\d{2}$/.test(m ?? "") ? m! : currentMonthKey();
 
-  const [invoices, students, unbilled] = await Promise.all([
+  const [invoices, students, unbilled, ndg] = await Promise.all([
     listInvoices(actor, {
       month: monthKey,
       state: (state as InvoiceFilters["state"]) || null,
     }),
     listStudents(actor),
     listUnbilledLessons(actor),
+    getNdgOverview(actor),
   ]);
 
   const billable = students.filter((student) => student.status !== "ENDED");
@@ -62,6 +65,13 @@ export default async function AdminInvoicesPage({
             extraQuery={{ state }}
           />
         }
+      />
+
+      {/* Wystawienie rachunku podnosi przychód — ostrzeżenie stoi tuż obok. */}
+      <NdgBanner
+        period={ndg.selected}
+        settings={ndg.settings}
+        href="/admin/ndg"
       />
 
       <div className="grid gap-6 xl:grid-cols-[1fr_380px]">

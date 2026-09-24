@@ -196,3 +196,36 @@ export const billingSettingsSchema = z.object({
     .max(120),
   invoiceFooter: optionalText(500),
 });
+
+// ---------- FAZA 3: LIMIT NDG I STATYSTYKI ----------
+
+export const ndgSettingsSchema = z.object({
+  enabled: z.union([z.boolean(), z.literal("true"), z.literal("false")]).transform(
+    (v) => v === true || v === "true"
+  ),
+  mode: z.enum(["MONTHLY", "QUARTERLY"]).default("QUARTERLY"),
+  revenueBasis: z.enum(["INVOICED", "PAID"]).default("INVOICED"),
+  warnThresholdPercent: z.coerce
+    .number()
+    .int("Próg podaj w pełnych procentach.")
+    .min(10, "Próg ostrzeżenia nie może być niższy niż 10%.")
+    .max(100, "Próg ostrzeżenia nie może przekraczać 100%."),
+  businessStartedAt: z
+    .union([
+      trimmed.regex(/^\d{4}-\d{2}-\d{2}$/, "Podaj datę w formacie RRRR-MM-DD."),
+      z.literal(""),
+      z.null(),
+      z.undefined(),
+    ])
+    .transform((v) => (v === "" || v === undefined || v === null ? null : v)),
+  note: optionalText(500),
+});
+
+export const ndgLimitSchema = z.object({
+  /** Miesiąc, od którego obowiązuje kwota — limit trzyma się pierwszego dnia miesiąca. */
+  validFrom: monthKeySchema,
+  amount: amountSchema.refine((v) => v > 0, {
+    message: "Limit musi być większy od zera.",
+  }),
+  note: optionalText(200),
+});

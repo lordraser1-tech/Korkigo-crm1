@@ -33,7 +33,7 @@ endpointy dla roli `TEACHER` nigdy nie powinny zwracać pola `ratePerLesson`
 z modelu `Student`, ani rekordów innego `teacherId`. Stawki ustala wyłącznie
 admin, ręcznie, w panelu admina.
 
-## Stan: faza 1 gotowa, faza 2 w części rozliczeniowej gotowa
+## Stan: faza 1 gotowa, faza 2 rozliczeniowa gotowa, faza 3 w części limitu NDG gotowa
 
 Zrobione: kartoteka uczniów, kartoteka nauczycieli, kalendarz lekcji
 (cykliczne + jednorazowe, statusy: zaplanowana/zrealizowana/odwołana/nieobecność),
@@ -53,11 +53,9 @@ Baza wiedzy, Wiadomości, Ustawienia.
   co dalej, z opcją kopiowania i wysyłki do ucznia), baza wiedzy per uczeń,
   synchronizacja z Google Calendar (`Lesson.googleEventId` już zarezerwowane
   w schemacie)
-- **Faza 3:** bezpiecznik limitu działalności nierejestrowanej (NDG) z
-  przeliczeniem kwartalnym, zakładka przejścia na działalność rejestrowaną,
-  eksport ewidencji do PIT-36, automatyczne wezwania do zapłaty, pełne raporty
-  — **to dotyka przepisów podatkowych; reguły/wzory do zweryfikowania z
-  księgowym przed wdrożeniem w produkcji**
+- **Faza 3 (zostało):** eksport ewidencji do PIT-36, automatyczne wezwania do
+  zapłaty, pełne raporty — **to dotyka przepisów podatkowych; reguły/wzory do
+  zweryfikowania z księgowym przed wdrożeniem w produkcji**
 - **Faza 4:** wsparcie AI przy wpisywaniu notatek z lekcji
 
 ## Start
@@ -130,3 +128,29 @@ dyspozycyjności, lekcji i statusu płatności każdej lekcji.
 zapłacono”. Nauczyciel dostaje sam status — bez numeru rachunku i kwoty — i tylko
 dla swoich lekcji. W trybie `PREPAID` jednostki pakietu idą chronologicznie:
 opłacone → wystawione → brak pokrycia. Testy: `tests/schedule.test.ts`.
+
+## Moduł NDG (faza 3) — reguły
+
+`src/lib/services/ndg.ts`, panel `/admin/ndg`. Tylko ADMIN.
+
+**Żadna kwota ani stawka podatkowa nie jest zaszyta w kodzie** i tak ma zostać.
+Aplikacja liczy to, co administrator wpisze: kwoty limitu (`NdgMonthlyLimit`
+z datą obowiązywania), okres rozliczenia, podstawę przychodu i próg ostrzeżenia.
+Przy zmianach trzymaj ten podział — w UI stoi jawne zastrzeżenie, że to
+narzędzie pomocnicze, a nie doradztwo podatkowe.
+
+Niezmienniki:
+
+- limit okresu = suma limitów jego miesięcy (zmiana kwoty w trakcie kwartału
+  liczy się poprawnie); brak kwoty w którymkolwiek miesiącu → status `UNKNOWN`,
+  nigdy podstawiona liczba,
+- podstawa przychodu: `INVOICED` (rachunki bez anulowanych) albo `PAID` (wpłaty),
+- progi: `WATCH` ≥ 70%, `WARNING` ≥ próg z ustawień (domyślnie 90%),
+  `EXCEEDED` ≥ 100%; pas ostrzegawczy stoi u góry modułu, pulpitu i rachunków,
+- `NdgSettings.enabled = false` (po założeniu firmy) wyłącza całą część
+  limitową, a moduł zostaje jako statystyki finansowe: miesiąc / kwartał / rok
+  i rozbicie na nauczycieli. Ta ścieżka ma być utrzymywana na równi z limitem.
+
+Kolory statusów pochodzą ze stałej palety (`--color-status-*` w `globals.css`)
+i zawsze idą w parze z ikoną i podpisem — kolor nigdy nie niesie znaczenia sam.
+Testy: `tests/ndg.test.ts`.

@@ -9,7 +9,8 @@ export const describeDb = process.env.DATABASE_URL ? describe : describe.skip;
 
 export async function resetDatabase(): Promise<void> {
   await prisma.$executeRawUnsafe(
-    `TRUNCATE TABLE "payments", "invoice_items", "invoices", "billing_settings",
+    `TRUNCATE TABLE "ndg_monthly_limits", "ndg_settings",
+     "payments", "invoice_items", "invoices", "billing_settings",
      "lesson_notes", "knowledge_base_entries", "lessons",
      "availabilities", "students", "teacher_profiles", "users"
      RESTART IDENTITY CASCADE`

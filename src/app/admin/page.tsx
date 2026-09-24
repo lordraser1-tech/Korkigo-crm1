@@ -5,6 +5,8 @@ import { listTeachers } from "@/lib/services/teachers";
 import { countLessonsByStatus, upcomingLessons } from "@/lib/services/lessons";
 import { getAdminFinanceSummary } from "@/lib/services/finance";
 import { listReceivables } from "@/lib/services/billing";
+import { getNdgOverview } from "@/lib/services/ndg";
+import { NdgBanner } from "@/components/ndg-banner";
 import { currentMonthKey, formatMonthLabel, monthRange } from "@/lib/datetime";
 import { formatPLN } from "@/lib/money";
 import { LessonList } from "@/components/lesson-list";
@@ -15,7 +17,7 @@ export default async function AdminDashboard() {
   const monthKey = currentMonthKey();
   const { from, to } = monthRange(monthKey);
 
-  const [students, teachers, counts, finance, upcoming, receivables] =
+  const [students, teachers, counts, finance, upcoming, receivables, ndg] =
     await Promise.all([
       listStudents(actor),
       listTeachers(actor),
@@ -23,6 +25,7 @@ export default async function AdminDashboard() {
       getAdminFinanceSummary(actor, monthKey),
       upcomingLessons(actor, 6),
       listReceivables(actor),
+      getNdgOverview(actor),
     ]);
 
   const overdue = receivables.filter((row) => row.overdueAmount > 0);
@@ -38,6 +41,12 @@ export default async function AdminDashboard() {
       <PageHeader
         title="Pulpit"
         description={`Podsumowanie miesiąca: ${formatMonthLabel(monthKey)}`}
+      />
+
+      <NdgBanner
+        period={ndg.selected}
+        settings={ndg.settings}
+        href="/admin/ndg"
       />
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
