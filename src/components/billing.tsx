@@ -1,5 +1,9 @@
 import type { BillingMode, PaymentMethod } from "@prisma/client";
-import type { InvoicePaymentState, PaymentFlag } from "@/lib/services/billing";
+import type {
+  InvoicePaymentState,
+  LessonPaymentState,
+  PaymentFlag,
+} from "@/lib/services/billing";
 import { Badge } from "@/components/ui";
 
 export const BILLING_MODE_LABEL: Record<BillingMode, string> = {
@@ -52,4 +56,37 @@ export function PaymentFlagBadge({ flag }: { flag: PaymentFlag | null }) {
   ) : (
     <Badge tone="green">Rozliczenia OK</Badge>
   );
+}
+
+const LESSON_PAYMENT_LABEL: Record<LessonPaymentState, string> = {
+  PAID: "Opłacona",
+  UNPAID: "Do zapłaty",
+  OVERDUE: "Po terminie",
+  NOT_INVOICED: "Bez rachunku",
+};
+
+/**
+ * Status płatności pojedynczej lekcji. Widoczny także dla nauczyciela —
+ * jak flaga przy uczniu, niesie tylko informację „zapłacone / nie”, bez kwot.
+ */
+export function LessonPaymentBadge({
+  payment,
+}: {
+  payment: { state: LessonPaymentState; fromPackage: boolean };
+}) {
+  const tone = {
+    PAID: "green",
+    UNPAID: "amber",
+    OVERDUE: "red",
+    NOT_INVOICED: "slate",
+  }[payment.state] as "green" | "amber" | "red" | "slate";
+
+  const label =
+    payment.fromPackage && payment.state === "PAID"
+      ? "Z pakietu"
+      : payment.fromPackage && payment.state !== "NOT_INVOICED"
+        ? `Pakiet — ${LESSON_PAYMENT_LABEL[payment.state].toLowerCase()}`
+        : LESSON_PAYMENT_LABEL[payment.state];
+
+  return <Badge tone={tone}>{label}</Badge>;
 }

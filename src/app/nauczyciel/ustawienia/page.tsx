@@ -60,7 +60,9 @@ export default async function TeacherSettingsPage() {
               Dyspozycyjność
             </h2>
             <p className="mb-4 text-xs text-slate-500">
-              Powtarzalne okna, w których możesz prowadzić lekcje.
+              Powtarzalne okna, w których możesz prowadzić lekcje. Widok
+              tygodnia i zapisy uczniów znajdziesz w zakładce „Grafik
+              i dyspozycja”.
             </p>
 
             {availability.length > 0 ? (

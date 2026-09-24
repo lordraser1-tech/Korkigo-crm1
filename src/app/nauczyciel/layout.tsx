@@ -5,6 +5,7 @@ import { AppShell, type NavItem } from "@/components/app-shell";
 const NAV: NavItem[] = [
   { href: "/nauczyciel", label: "Pulpit" },
   { href: "/nauczyciel/uczniowie", label: "Moi uczniowie" },
+  { href: "/nauczyciel/grafik", label: "Grafik i dyspozycja" },
   { href: "/nauczyciel/kalendarz", label: "Kalendarz lekcji" },
   { href: "/nauczyciel/wyplaty", label: "Moje wypłaty" },
   { href: "#", label: "Notatki z lekcji", soon: true },

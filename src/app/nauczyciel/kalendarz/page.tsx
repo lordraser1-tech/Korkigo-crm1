@@ -1,6 +1,7 @@
 import { requirePage } from "@/lib/auth";
 import { listLessons } from "@/lib/services/lessons";
 import { listStudentOptions } from "@/lib/services/students";
+import { getLessonPaymentStates } from "@/lib/services/billing";
 import {
   currentMonthKey,
   monthRange,
@@ -25,6 +26,10 @@ export default async function TeacherCalendarPage({
     listLessons(actor, { from, to }),
     listStudentOptions(actor),
   ]);
+  const payments = await getLessonPaymentStates(
+    actor,
+    lessons.map((lesson) => lesson.id)
+  );
 
   return (
     <>
@@ -38,6 +43,7 @@ export default async function TeacherCalendarPage({
         <div>
           <LessonList
             lessons={lessons}
+            payments={payments}
             studentHrefBase="/nauczyciel/uczniowie"
             emptyText="Brak lekcji w tym miesiącu."
           />

@@ -39,7 +39,9 @@ Zrobione: kartoteka uczniów, kartoteka nauczycieli, kalendarz lekcji
 (cykliczne + jednorazowe, statusy: zaplanowana/zrealizowana/odwołana/nieobecność),
 panel nauczyciela (dodawanie uczniów, odznaczanie lekcji, podgląd zarobków),
 panel admina (pełny widok + ręczne ustawianie stawek), a z fazy 2 — płatności,
-zaległości i rachunki z automatyczną numeracją gotowe do druku.
+zaległości i rachunki z automatyczną numeracją gotowe do druku oraz zakładka
+„Grafik i dyspozycja” spinająca dyspozycyjność, zapisy uczniów i status
+płatności każdej lekcji.
 
 Makieta panelu nauczyciela już istnieje (Claude Artifact — Design canvas),
 z menu: Pulpit, Moi uczniowie, Kalendarz lekcji, Moje wypłaty, Notatki z lekcji,
@@ -111,3 +113,20 @@ Niezmienniki, których nie wolno naruszyć przy zmianach:
 
 Testy tych reguł: `tests/billing.test.ts`. Przy zmianach w rozliczeniach
 **dopisz tam przypadek**.
+
+## Grafik (zakładka „Grafik i dyspozycja”)
+
+`src/lib/services/schedule.ts` składa tydzień z trzech rzeczy: okien
+dyspozycyjności, lekcji i statusu płatności każdej lekcji.
+
+- nauczyciel zawsze dostaje własny grafik — `resolveScope()` ignoruje cudze
+  `teacherId` zamiast zwracać błąd, więc nie da się go obejść parametrem,
+- admin widzi wszystkich i filtruje po nauczycielu; wolne godziny liczymy tylko
+  wtedy, gdy w widoku jest jeden nauczyciel,
+- wolne godziny to okna dyspozycyjności pocięte na sloty po 60 minut minus
+  lekcje kolidujące terminem; lekcja odwołana zwalnia termin.
+
+`getLessonPaymentStates()` (w `billing.ts`) odpowiada na pytanie „za którą lekcję
+zapłacono”. Nauczyciel dostaje sam status — bez numeru rachunku i kwoty — i tylko
+dla swoich lekcji. W trybie `PREPAID` jednostki pakietu idą chronologicznie:
+opłacone → wystawione → brak pokrycia. Testy: `tests/schedule.test.ts`.

@@ -49,6 +49,8 @@ jest jedynym zabezpieczeniem.
 | Uczniowie | wszyscy, z `ratePerLesson` | tylko własni, **bez** `ratePerLesson` |
 | Stawka ucznia | ustawia ręcznie | nie widzi i nie ustawia (`403`) |
 | Rachunki, wpłaty, salda | pełny dostęp | `403` — widzi wyłącznie flagę „Rozliczenia OK / Zaległość”, bez kwot |
+| Grafik i dyspozycyjność | wszyscy nauczyciele, z filtrem | tylko własny grafik — cudze `teacherId` jest ignorowane |
+| Status płatności lekcji | ze wskazaniem rachunku | sam status (opłacona / do zapłaty / po terminie), bez numeru i kwoty |
 | Tryb rozliczeń ucznia | ustawia | nie widzi i nie zmienia (`403`) |
 | Nauczyciele | pełna lista i dane | tylko własny profil (`404` na cudzy) |
 | Stawka nauczyciela | ustawia | widzi własną, nie zmienia (`403`) |
@@ -96,6 +98,32 @@ Zasady, których pilnuje warstwa serwisowa (`src/lib/services/billing.ts`):
 Wydruk: `/admin/rachunki/{id}` ma widok dokumentu i przycisk „Drukuj” —
 nawigacja jest ukrywana przez `@media print`.
 
+## Grafik i dyspozycja
+
+Zakładka `Grafik i dyspozycja` (`/nauczyciel/grafik`, `/admin/grafik`) pokazuje
+tydzień w siedmiu kolumnach: okna dyspozycyjności, zapisanych uczniów i **status
+płatności każdej lekcji**.
+
+- **nauczyciel** zarządza własnymi oknami i zapisuje uczniów; przy zapisie
+  dostaje listę wolnych godzin wyliczoną z jego dyspozycyjności (okna minus
+  lekcje już zajmujące termin; odwołana lekcja zwalnia termin),
+- **admin** widzi dyspozycyjność i zajęcia wszystkich, filtruje po nauczycielu,
+  a po wybraniu jednego może dopisać mu okno albo zapisać ucznia na lekcję.
+
+Status płatności lekcji (`getLessonPaymentStates`) liczy się tak:
+
+| Status | Kiedy |
+| --- | --- |
+| `PAID` | lekcja jest na rachunku, który ma zerowe saldo — albo mieści się w **opłaconym** pakiecie |
+| `UNPAID` | rachunek wystawiony, termin jeszcze nie minął |
+| `OVERDUE` | rachunek wystawiony, termin minął |
+| `NOT_INVOICED` | lekcja nie trafiła jeszcze na żaden rachunek ani nie mieści się w pakiecie |
+
+W trybie `PREPAID` jednostki pakietu przydzielane są **chronologicznie**: pierwsze
+lekcje zużywają to, co opłacone, kolejne to, co wystawione, a reszta czeka na
+nowy pakiet. Lekcje odwołane nie zużywają jednostek. Te same statusy widać na
+kalendarzu (`/nauczyciel/kalendarz`, `/admin/lekcje`).
+
 ## Struktura
 
 ```
@@ -105,14 +133,15 @@ prisma/
 src/
   app/
     login/             # logowanie
-    nauczyciel/        # panel nauczyciela
+    nauczyciel/        # panel nauczyciela (pulpit, grafik, kalendarz, wypłaty)
     admin/             # panel administratora
     api/               # REST API (te same serwisy, ta sama autoryzacja)
     actions/           # Server Actions formularzy
   components/          # UI współdzielone przez oba panele
   lib/
     auth.ts            # Actor (kto pyta) + strażnicy ról
-    services/          # LOGIKA I UPRAWNIENIA: students, teachers, lessons, finance
+    services/          # LOGIKA I UPRAWNIENIA: students, teachers, lessons,
+                       # finance, billing, schedule
     validation.ts      # schematy Zod
     datetime.ts        # czas warszawski <-> UTC, lekcje cykliczne
 tests/                 # testy uprawnień i konwersji czasu
@@ -141,6 +170,7 @@ Wszystkie endpointy wymagają ciasteczka sesji i same sprawdzają rolę.
 | `DELETE` | `/api/payments/{id}` | |
 | `GET` | `/api/receivables` | salda i zaległości wszystkich uczniów |
 | `GET`/`PUT` | `/api/billing-settings` | dane wystawcy i termin płatności |
+| `GET` | `/api/schedule` | `?week=RRRR-MM-DD&teacherId=` — grafik tygodnia; nauczyciel zawsze dostaje własny |
 
 Błędy mają kształt `{ "error": { "code", "message" } }`,
 sukces `{ "data": ... }`.
@@ -166,7 +196,9 @@ w odpowiedziach dla nauczyciela, odmowę zmiany stawek przez nauczyciela,
 wyliczanie zarobków i marży, serie cykliczne przy zmianie czasu, a dla fazy 2 —
 numerację rachunków (w tym reset miesięczny), zakaz dwukrotnego zafakturowania
 lekcji, salda, zaległości, pakiety przedpłacone i odcięcie nauczyciela od
-rozliczeń.
+rozliczeń. Grafik ma własny zestaw: zawężenie do własnej dyspozycyjności,
+ignorowanie cudzego `teacherId`, wyliczanie wolnych godzin i statusy płatności
+lekcji (także dla pakietów).
 
 Bez `DATABASE_URL` testy integracyjne są pomijane (uruchomią się tylko testy
 konwersji czasu).

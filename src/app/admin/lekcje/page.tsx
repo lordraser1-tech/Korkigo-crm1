@@ -2,6 +2,7 @@ import { requirePage } from "@/lib/auth";
 import { listLessons } from "@/lib/services/lessons";
 import { listStudentOptions } from "@/lib/services/students";
 import { listTeachers } from "@/lib/services/teachers";
+import { getLessonPaymentStates } from "@/lib/services/billing";
 import {
   currentMonthKey,
   monthRange,
@@ -27,6 +28,10 @@ export default async function AdminLessonsPage({
     listStudentOptions(actor),
     listTeachers(actor, { includeInactive: true }),
   ]);
+  const payments = await getLessonPaymentStates(
+    actor,
+    lessons.map((lesson) => lesson.id)
+  );
 
   return (
     <>
@@ -71,6 +76,7 @@ export default async function AdminLessonsPage({
         <div>
           <LessonList
             lessons={lessons}
+            payments={payments}
             showTeacher
             studentHrefBase="/admin/uczniowie"
             emptyText="Brak lekcji w tym miesiącu."

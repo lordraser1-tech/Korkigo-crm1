@@ -996,3 +996,171 @@ export async function listUnbilledLessons(
     amount: toAmount(row.student.ratePerLesson),
   }));
 }
+
+// ---------- STATUS PŁATNOŚCI POJEDYNCZEJ LEKCJI ----------
+
+export type LessonPaymentState = "PAID" | "UNPAID" | "OVERDUE" | "NOT_INVOICED";
+
+export type LessonPaymentInfo = {
+  state: LessonPaymentState;
+  /** Czy lekcja jest pokryta pakietem przedpłaconym. */
+  fromPackage: boolean;
+  /** Numer rachunku — wyłącznie dla admina; nauczyciel dostaje `null`. */
+  invoiceNumber: string | null;
+  invoiceId: string | null;
+};
+
+/** Statusy, które zużywają jednostkę pakietu (odwołana lekcja nie przepada). */
+const PACKAGE_CONSUMING = ["COMPLETED", "NO_SHOW", "SCHEDULED"] as const;
+
+/**
+ * Odpowiada na pytanie „za którą lekcję zapłacono?”.
+ *
+ * Nauczyciel dostaje sam status — bez kwot i numerów rachunków — i wyłącznie
+ * dla swoich lekcji. Admin dodatkowo numer rachunku.
+ */
+export async function getLessonPaymentStates(
+  actor: Actor,
+  lessonIds: string[],
+  now = new Date()
+): Promise<Map<string, LessonPaymentInfo>> {
+  const result = new Map<string, LessonPaymentInfo>();
+  if (lessonIds.length === 0) return result;
+
+  const scope =
+    actor.role === "ADMIN" ? {} : { teacherId: actor.teacherProfileId };
+  const showInvoiceNumbers = actor.role === "ADMIN";
+
+  const lessons = await prisma.lesson.findMany({
+    where: { id: { in: lessonIds }, ...scope },
+    select: {
+      id: true,
+      studentId: true,
+      student: { select: { billingMode: true } },
+      invoiceItem: {
+        select: {
+          invoice: {
+            select: {
+              id: true,
+              number: true,
+              status: true,
+              dueAt: true,
+              totalAmount: true,
+              payments: { select: { amount: true } },
+            },
+          },
+        },
+      },
+    },
+  });
+
+  const requested = new Set(lessonIds);
+  const prepaidStudentIds = new Set<string>();
+
+  for (const lesson of lessons) {
+    if (lesson.student.billingMode === "PREPAID") {
+      prepaidStudentIds.add(lesson.studentId);
+      continue;
+    }
+
+    const invoice = lesson.invoiceItem?.invoice;
+    if (!invoice || invoice.status === "CANCELLED") {
+      result.set(lesson.id, {
+        state: "NOT_INVOICED",
+        fromPackage: false,
+        invoiceNumber: null,
+        invoiceId: null,
+      });
+      continue;
+    }
+
+    const paid = invoice.payments.reduce(
+      (sum, payment) => sum + toAmount(payment.amount),
+      0
+    );
+    const balance = round(toAmount(invoice.totalAmount) - paid);
+    const state: LessonPaymentState =
+      balance <= 0.004 ? "PAID" : invoice.dueAt < now ? "OVERDUE" : "UNPAID";
+
+    result.set(lesson.id, {
+      state,
+      fromPackage: false,
+      invoiceNumber: showInvoiceNumbers ? invoice.number : null,
+      invoiceId: showInvoiceNumbers ? invoice.id : null,
+    });
+  }
+
+  // Pakiety: jednostki przydzielamy chronologicznie — pierwsze lekcje zużywają
+  // to, co opłacone, kolejne to, co wystawione, reszta czeka na nowy pakiet.
+  for (const studentId of prepaidStudentIds) {
+    const invoices = await prisma.invoice.findMany({
+      where: { studentId, status: { not: "CANCELLED" } },
+      select: {
+        number: true,
+        id: true,
+        dueAt: true,
+        totalAmount: true,
+        payments: { select: { amount: true } },
+        items: { select: { quantity: true, lessonId: true } },
+      },
+      orderBy: { issuedAt: "asc" },
+    });
+
+    type Unit = { paid: boolean; overdue: boolean; number: string; id: string };
+    const units: Unit[] = [];
+    for (const invoice of invoices) {
+      const paid = invoice.payments.reduce(
+        (sum, payment) => sum + toAmount(payment.amount),
+        0
+      );
+      const settled = round(toAmount(invoice.totalAmount) - paid) <= 0.004;
+      const quantity = invoice.items
+        .filter((item) => item.lessonId === null)
+        .reduce((sum, item) => sum + item.quantity, 0);
+      for (let index = 0; index < quantity; index += 1) {
+        units.push({
+          paid: settled,
+          overdue: !settled && invoice.dueAt < now,
+          number: invoice.number,
+          id: invoice.id,
+        });
+      }
+    }
+
+    const studentLessons = await prisma.lesson.findMany({
+      where: { studentId, status: { in: [...PACKAGE_CONSUMING] } },
+      select: { id: true },
+      orderBy: { scheduledAt: "asc" },
+    });
+
+    studentLessons.forEach((lesson, index) => {
+      if (!requested.has(lesson.id)) return; // liczy się pozycja, nie zapis
+      const unit = units[index];
+      result.set(lesson.id, {
+        state: !unit
+          ? "NOT_INVOICED"
+          : unit.paid
+            ? "PAID"
+            : unit.overdue
+              ? "OVERDUE"
+              : "UNPAID",
+        fromPackage: Boolean(unit),
+        invoiceNumber: unit && showInvoiceNumbers ? unit.number : null,
+        invoiceId: unit && showInvoiceNumbers ? unit.id : null,
+      });
+    });
+  }
+
+  // Lekcje odwołane (i inne niezużywające pakietu) nie mają przypisanej jednostki.
+  for (const lesson of lessons) {
+    if (result.has(lesson.id)) continue;
+    result.set(lesson.id, {
+      state: "NOT_INVOICED",
+      fromPackage: false,
+      invoiceNumber: null,
+      invoiceId: null,
+    });
+  }
+
+  return result;
+}

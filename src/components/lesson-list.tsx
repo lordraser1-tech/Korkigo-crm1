@@ -2,6 +2,8 @@ import Link from "next/link";
 import { deleteLessonAction, setLessonStatusAction } from "@/app/actions/lessons";
 import { formatDate, formatTime, formatWeekday } from "@/lib/datetime";
 import type { LessonDto } from "@/lib/services/lessons";
+import type { LessonPaymentInfo } from "@/lib/services/billing";
+import { LessonPaymentBadge } from "@/components/billing";
 import { ConfirmButton, SubmitButton } from "@/components/forms";
 import { EmptyState, LessonStatusBadge } from "@/components/ui";
 
@@ -41,12 +43,15 @@ export function LessonList({
   studentHrefBase,
   canDelete = true,
   emptyText = "Brak lekcji w wybranym okresie.",
+  payments,
 }: {
   lessons: LessonDto[];
   showTeacher?: boolean;
   studentHrefBase?: string;
   canDelete?: boolean;
   emptyText?: string;
+  /** Status płatności per lekcja — bez kwot, więc bezpieczny też dla nauczyciela. */
+  payments?: Map<string, LessonPaymentInfo>;
 }) {
   if (lessons.length === 0) return <EmptyState>{emptyText}</EmptyState>;
 
@@ -90,6 +95,9 @@ export function LessonList({
                   ) : null}
                 </div>
                 <LessonStatusBadge status={lesson.status} />
+                {payments?.get(lesson.id) ? (
+                  <LessonPaymentBadge payment={payments.get(lesson.id)!} />
+                ) : null}
                 <div className="flex flex-wrap gap-1.5">
                   {lesson.status !== "COMPLETED" ? (
                     <StatusForm

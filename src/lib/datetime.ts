@@ -144,3 +144,75 @@ export function addWeeksToWallClock(value: string, weeks: number): string {
     shifted.getUTCDate()
   )}T${hh}:${mm}`;
 }
+
+// ---------- TYDZIEŃ (grafik) ----------
+
+/** Poniedziałek tygodnia, w którym leży podana data ścienna "RRRR-MM-DD". */
+export function weekStartKey(dateKey: string): string {
+  const [year, month, day] = dateKey.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  // getUTCDay(): 0 = niedziela, więc poniedziałek to przesunięcie o (d+6)%7.
+  const shift = (date.getUTCDay() + 6) % 7;
+  date.setUTCDate(date.getUTCDate() - shift);
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${date.getUTCFullYear()}-${pad(date.getUTCMonth() + 1)}-${pad(
+    date.getUTCDate()
+  )}`;
+}
+
+export function currentWeekKey(now = new Date()): string {
+  return weekStartKey(toWallClockInput(now).slice(0, 10));
+}
+
+export function shiftWeek(weekKey: string, delta: number): string {
+  const [year, month, day] = weekKey.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day + delta * 7));
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${date.getUTCFullYear()}-${pad(date.getUTCMonth() + 1)}-${pad(
+    date.getUTCDate()
+  )}`;
+}
+
+/** Siedem dni tygodnia: klucz daty i dzień tygodnia zgodny ze schematem (0 = niedziela). */
+export function weekDays(
+  weekKey: string
+): Array<{ dateKey: string; dayOfWeek: number }> {
+  const [year, month, day] = weekKey.split("-").map(Number);
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return Array.from({ length: 7 }, (_, index) => {
+    const date = new Date(Date.UTC(year, month - 1, day + index));
+    return {
+      dateKey: `${date.getUTCFullYear()}-${pad(date.getUTCMonth() + 1)}-${pad(
+        date.getUTCDate()
+      )}`,
+      dayOfWeek: date.getUTCDay(),
+    };
+  });
+}
+
+/** Zakres [od, do) tygodnia w UTC, licząc od północy czasu warszawskiego. */
+export function weekRange(weekKey: string): { from: Date; to: Date } {
+  return {
+    from: wallClockToUtc(`${weekKey}T00:00`),
+    to: wallClockToUtc(`${shiftWeek(weekKey, 1)}T00:00`),
+  };
+}
+
+export function formatWeekLabel(weekKey: string): string {
+  const days = weekDays(weekKey);
+  const first = wallClockToUtc(`${days[0].dateKey}T12:00`);
+  const last = wallClockToUtc(`${days[6].dateKey}T12:00`);
+  return `${formatDate(first)} – ${formatDate(last)}`;
+}
+
+/** "16:00" -> minuty od północy; do porównań okien dyspozycyjności. */
+export function timeToMinutes(value: string): number {
+  const [hours, minutes] = value.split(":").map(Number);
+  return hours * 60 + minutes;
+}
+
+export function minutesToTime(value: number): string {
+  const hours = Math.floor(value / 60);
+  const minutes = value % 60;
+  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+}

@@ -5,6 +5,7 @@ const NAV: NavItem[] = [
   { href: "/admin", label: "Pulpit" },
   { href: "/admin/uczniowie", label: "Uczniowie" },
   { href: "/admin/nauczyciele", label: "Nauczyciele" },
+  { href: "/admin/grafik", label: "Grafik i dyspozycja" },
   { href: "/admin/lekcje", label: "Kalendarz lekcji" },
   { href: "/admin/rozliczenia", label: "Rozliczenia" },
   { href: "/admin/rachunki", label: "Rachunki" },
