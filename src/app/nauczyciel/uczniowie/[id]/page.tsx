@@ -7,6 +7,7 @@ import { NotFoundError } from "@/lib/errors";
 import { updateStudentAction } from "@/app/actions/students";
 import { ActionForm, Field, SelectField } from "@/components/forms";
 import { LessonList } from "@/components/lesson-list";
+import { PaymentFlagBadge } from "@/components/billing";
 import { PageHeader, StudentStatusBadge } from "@/components/ui";
 
 export default async function TeacherStudentPage({
@@ -40,9 +41,12 @@ export default async function TeacherStudentPage({
 
       <div className="grid gap-6 lg:grid-cols-[360px_1fr]">
         <div className="card h-fit p-5">
-          <div className="mb-4 flex items-center justify-between">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
             <h2 className="text-base font-semibold text-slate-900">Dane ucznia</h2>
-            <StudentStatusBadge status={student.status} />
+            <div className="flex items-center gap-2">
+              <PaymentFlagBadge flag={student.paymentFlag} />
+              <StudentStatusBadge status={student.status} />
+            </div>
           </div>
           <ActionForm action={updateStudentAction} submitLabel="Zapisz zmiany">
             <input type="hidden" name="id" value={student.id} />
@@ -71,8 +75,9 @@ export default async function TeacherStudentPage({
             />
           </ActionForm>
           <p className="mt-4 border-t border-slate-100 pt-3 text-xs text-slate-500">
-            Stawka ucznia jest widoczna wyłącznie dla administratora. Twoje
-            wynagrodzenie znajdziesz w zakładce „Moje wypłaty”.
+            Stawka ucznia i jego rachunki są widoczne wyłącznie dla
+            administratora — tutaj widzisz jedynie, czy rozliczenia są na
+            bieżąco. Twoje wynagrodzenie znajdziesz w zakładce „Moje wypłaty”.
           </p>
         </div>
 

@@ -33,12 +33,13 @@ endpointy dla roli `TEACHER` nigdy nie powinny zwracać pola `ratePerLesson`
 z modelu `Student`, ani rekordów innego `teacherId`. Stawki ustala wyłącznie
 admin, ręcznie, w panelu admina.
 
-## Faza obecna: fundament
+## Stan: faza 1 gotowa, faza 2 w części rozliczeniowej gotowa
 
-Budujemy teraz: kartoteka uczniów, kartoteka nauczycieli, kalendarz lekcji
+Zrobione: kartoteka uczniów, kartoteka nauczycieli, kalendarz lekcji
 (cykliczne + jednorazowe, statusy: zaplanowana/zrealizowana/odwołana/nieobecność),
 panel nauczyciela (dodawanie uczniów, odznaczanie lekcji, podgląd zarobków),
-panel admina (pełny widok + ręczne ustawianie stawek).
+panel admina (pełny widok + ręczne ustawianie stawek), a z fazy 2 — płatności,
+zaległości i rachunki z automatyczną numeracją gotowe do druku.
 
 Makieta panelu nauczyciela już istnieje (Claude Artifact — Design canvas),
 z menu: Pulpit, Moi uczniowie, Kalendarz lekcji, Moje wypłaty, Notatki z lekcji,
@@ -46,10 +47,10 @@ Baza wiedzy, Wiadomości, Ustawienia.
 
 ## Kolejne fazy (nie teraz, ale schemat już to przewiduje)
 
-- **Faza 2:** płatności i zaległości, rachunki z automatyczną numeracją gotowe
-  do druku, notatki z lekcji (szablon: co było / jak poszło / cel / co dalej,
-  z opcją kopiowania i wysyłki do ucznia), baza wiedzy per uczeń, synchronizacja
-  z Google Calendar (`Lesson.googleEventId` już zarezerwowane w schemacie)
+- **Faza 2 (zostało):** notatki z lekcji (szablon: co było / jak poszło / cel /
+  co dalej, z opcją kopiowania i wysyłki do ucznia), baza wiedzy per uczeń,
+  synchronizacja z Google Calendar (`Lesson.googleEventId` już zarezerwowane
+  w schemacie)
 - **Faza 3:** bezpiecznik limitu działalności nierejestrowanej (NDG) z
   przeliczeniem kwartalnym, zakładka przejścia na działalność rejestrowaną,
   eksport ewidencji do PIT-36, automatyczne wezwania do zapłaty, pełne raporty
@@ -86,3 +87,27 @@ w warstwie serwisowej**, nie w komponentach.
   Przy zmianach w dostępie do danych **dopisz tam przypadek**.
 
 Ścieżki paneli: `/admin/*` (admin) i `/nauczyciel/*` (nauczyciel), logowanie `/login`.
+
+## Rozliczenia (faza 2) — reguły
+
+Uczeń ma tryb rozliczeń `Student.billingMode`: `POSTPAID` (rachunek zbiorczy na
+koniec miesiąca), `PER_LESSON` (rachunek po każdej lekcji) albo `PREPAID`
+(pakiet z góry, lekcje zdejmują jednostki). Cała logika siedzi w
+`src/lib/services/billing.ts` i jest **dostępna wyłącznie dla ADMIN-a**.
+
+Jedyny wyjątek to `getPaymentFlags()` — zwraca nauczycielowi sam enum
+`OK` / `OVERDUE` dla **jego** uczniów, bez kwot, dat i numerów rachunków.
+Ta granica jest świadoma: nauczyciel ma wiedzieć, że uczeń zalega, ale nie ile.
+
+Niezmienniki, których nie wolno naruszyć przy zmianach:
+
+- numeracja `1/09/2026` jest ciągła i resetuje się co miesiąc; numer nadaje się
+  w transakcji, a anulowany rachunek **nie** zwalnia numeru,
+- jedna lekcja może trafić na jeden rachunek (`InvoiceItem.lessonId` @unique),
+- lekcja ujęta na nieanulowanym rachunku jest zamrożona (blokada w
+  `lessons.updateLesson` i `deleteLesson`),
+- rachunków nie usuwamy — `cancelInvoice()` zmienia status i zwalnia lekcje,
+- dane wystawcy trafiają na rachunek jako snapshot przy wystawieniu.
+
+Testy tych reguł: `tests/billing.test.ts`. Przy zmianach w rozliczeniach
+**dopisz tam przypadek**.

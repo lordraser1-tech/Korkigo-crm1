@@ -213,6 +213,22 @@ export async function createLessons(
   return created.map(mapLesson);
 }
 
+/**
+ * Lekcja ujęta na wystawionym rachunku jest zamrożona — inaczej zmiana statusu
+ * albo terminu rozjechałaby się z dokumentem, który uczeń już dostał.
+ */
+async function assertNotInvoiced(lessonId: string): Promise<void> {
+  const item = await prisma.invoiceItem.findUnique({
+    where: { lessonId },
+    select: { invoice: { select: { number: true, status: true } } },
+  });
+  if (item && item.invoice.status !== "CANCELLED") {
+    throw new ValidationError(
+      `Lekcja jest ujęta na rachunku ${item.invoice.number} — najpierw anuluj rachunek.`
+    );
+  }
+}
+
 export async function updateLesson(
   actor: Actor,
   id: string,
@@ -225,6 +241,7 @@ export async function updateLesson(
     select: { id: true },
   });
   if (!existing) throw new NotFoundError("Nie znaleziono lekcji.");
+  await assertNotInvoiced(id);
 
   const update: Prisma.LessonUpdateInput = {};
   if (data.scheduledAt !== undefined) {
@@ -254,6 +271,10 @@ export async function setLessonStatus(
 export async function deleteLesson(actor: Actor, id: string): Promise<void> {
   const where: Prisma.LessonWhereInput =
     actor.role === "ADMIN" ? { id } : { id, teacherId: actor.teacherProfileId };
+  const visible = await prisma.lesson.findFirst({ where, select: { id: true } });
+  if (!visible) throw new NotFoundError("Nie znaleziono lekcji.");
+  await assertNotInvoiced(id);
+
   const result = await prisma.lesson.deleteMany({ where });
   if (result.count === 0) throw new NotFoundError("Nie znaleziono lekcji.");
 }

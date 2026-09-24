@@ -7,7 +7,9 @@ const NAV: NavItem[] = [
   { href: "/admin/nauczyciele", label: "Nauczyciele" },
   { href: "/admin/lekcje", label: "Kalendarz lekcji" },
   { href: "/admin/rozliczenia", label: "Rozliczenia" },
-  { href: "#", label: "Płatności i rachunki", soon: true },
+  { href: "/admin/rachunki", label: "Rachunki" },
+  { href: "/admin/platnosci", label: "Płatności" },
+  { href: "/admin/ustawienia", label: "Ustawienia" },
   { href: "#", label: "Limit NDG", soon: true },
 ];
 

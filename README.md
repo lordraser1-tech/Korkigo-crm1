@@ -48,6 +48,8 @@ jest jedynym zabezpieczeniem.
 | --- | --- | --- |
 | Uczniowie | wszyscy, z `ratePerLesson` | tylko własni, **bez** `ratePerLesson` |
 | Stawka ucznia | ustawia ręcznie | nie widzi i nie ustawia (`403`) |
+| Rachunki, wpłaty, salda | pełny dostęp | `403` — widzi wyłącznie flagę „Rozliczenia OK / Zaległość”, bez kwot |
+| Tryb rozliczeń ucznia | ustawia | nie widzi i nie zmienia (`403`) |
 | Nauczyciele | pełna lista i dane | tylko własny profil (`404` na cudzy) |
 | Stawka nauczyciela | ustawia | widzi własną, nie zmienia (`403`) |
 | Lekcje | wszystkie | tylko własne; zmiana statusu własnych |
@@ -60,7 +62,39 @@ Szczegóły implementacji:
   (`selectFor()` w `src/lib/services/students.ts`),
 - cudzy rekord zwraca `404`, nie `403` — nie potwierdzamy, że istnieje,
 - uczeń dodany przez nauczyciela dostaje stawkę `0` i trafia na listę
-  „czeka na ustalenie stawki” na pulpicie admina.
+  „czeka na ustalenie stawki” na pulpicie admina,
+- flaga rozliczeń dla nauczyciela to sam enum `OK` / `OVERDUE` — bez kwoty,
+  terminu i numeru rachunku.
+
+## Płatności i rachunki (faza 2)
+
+Każdy uczeń ma **tryb rozliczeń** (`Student.billingMode`), który decyduje o tym,
+jak powstaje rachunek:
+
+| Tryb | Jak działa |
+| --- | --- |
+| `POSTPAID` | rachunek zbiorczy na koniec miesiąca za lekcje zrealizowane |
+| `PER_LESSON` | osobny rachunek po każdej zrealizowanej lekcji |
+| `PREPAID` | rachunek za pakiet z góry; zrealizowane lekcje zdejmują jednostki |
+
+Zasady, których pilnuje warstwa serwisowa (`src/lib/services/billing.ts`):
+
+- **numeracja** `1/09/2026` — ciągła, liczona w miesiącu wystawienia, resetuje
+  się pierwszego dnia miesiąca; numer nadawany w transakcji, kolizja jest
+  ponawiana,
+- **jedna lekcja = jeden rachunek** — pilnuje tego unikalny `InvoiceItem.lessonId`,
+- **lekcja na rachunku jest zamrożona** — nie da się zmienić jej statusu ani
+  terminu, dopóki rachunek nie zostanie anulowany,
+- **rachunków się nie usuwa**, tylko anuluje (numeracja zostaje ciągła);
+  anulowanie zwalnia ujęte lekcje,
+- **dane wystawcy są kopiowane na rachunek** w chwili wystawienia — późniejsza
+  zmiana w Ustawieniach nie zmienia dokumentów już wydanych uczniom,
+- **saldo ucznia** = suma wpłat − suma rachunków (bez anulowanych). Ujemne to
+  zaległość, dodatnie to nadpłata; wpłata bez wskazanego rachunku jest
+  przedpłatą.
+
+Wydruk: `/admin/rachunki/{id}` ma widok dokumentu i przycisk „Drukuj” —
+nawigacja jest ukrywana przez `@media print`.
 
 ## Struktura
 
@@ -101,6 +135,12 @@ Wszystkie endpointy wymagają ciasteczka sesji i same sprawdzają rolę.
 | `GET`/`PATCH`/`DELETE` | `/api/lessons/{id}` | |
 | `GET` | `/api/earnings` | `?teacherId=&month=` |
 | `GET` | `/api/finance/summary` | `?month=` — tylko admin |
+| `GET`/`POST` | `/api/invoices` | `?month=&studentId=&state=`; POST z `type`: `monthly` / `lesson` / `package` |
+| `GET`/`DELETE` | `/api/invoices/{id}` | `DELETE` anuluje rachunek, nie usuwa |
+| `GET`/`POST` | `/api/payments` | `?month=&studentId=` |
+| `DELETE` | `/api/payments/{id}` | |
+| `GET` | `/api/receivables` | salda i zaległości wszystkich uczniów |
+| `GET`/`PUT` | `/api/billing-settings` | dane wystawcy i termin płatności |
 
 Błędy mają kształt `{ "error": { "code", "message" } }`,
 sukces `{ "data": ... }`.
@@ -123,7 +163,10 @@ npm test
 
 Testy pokrywają m.in.: zakres widoczności uczniów i lekcji, brak stawki ucznia
 w odpowiedziach dla nauczyciela, odmowę zmiany stawek przez nauczyciela,
-wyliczanie zarobków i marży oraz serie cykliczne przy zmianie czasu.
+wyliczanie zarobków i marży, serie cykliczne przy zmianie czasu, a dla fazy 2 —
+numerację rachunków (w tym reset miesięczny), zakaz dwukrotnego zafakturowania
+lekcji, salda, zaległości, pakiety przedpłacone i odcięcie nauczyciela od
+rozliczeń.
 
 Bez `DATABASE_URL` testy integracyjne są pomijane (uruchomią się tylko testy
 konwersji czasu).
@@ -148,9 +191,12 @@ pierwszym seedzie). Na produkcji migracje uruchamiaj przez
 `npx prisma migrate deploy`. Ciasteczko sesji jest `httpOnly`, `sameSite=lax`
 i `secure` w trybie produkcyjnym — wymaga HTTPS.
 
-## Co dalej (faza 2+)
+## Co dalej
 
-Płatności i zaległości, rachunki z automatyczną numeracją, notatki z lekcji,
-baza wiedzy per uczeń, synchronizacja z Google Calendar (`Lesson.googleEventId`
-jest już zarezerwowane), później limit NDG i wsparcie AI przy notatkach.
-Pozycje menu oznaczone „wkrótce” są miejscami na te moduły.
+Z fazy 2 zostały: notatki z lekcji (szablon co było / jak poszło / cel / co
+dalej), baza wiedzy per uczeń i synchronizacja z Google Calendar
+(`Lesson.googleEventId` jest już zarezerwowane). Dalej faza 3 — limit
+działalności nierejestrowanej, eksport ewidencji do PIT-36 i automatyczne
+wezwania do zapłaty (**reguły podatkowe do potwierdzenia z księgowym**) — oraz
+faza 4, czyli wsparcie AI przy notatkach. Pozycje menu oznaczone „wkrótce” są
+miejscami na te moduły.

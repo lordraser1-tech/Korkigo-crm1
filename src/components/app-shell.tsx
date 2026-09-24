@@ -22,7 +22,7 @@ export function AppShell({
 }) {
   return (
     <div className="flex min-h-screen flex-col lg:flex-row">
-      <aside className="border-b border-slate-200 bg-white lg:w-64 lg:shrink-0 lg:border-b-0 lg:border-r">
+      <aside className="no-print border-b border-slate-200 bg-white lg:w-64 lg:shrink-0 lg:border-b-0 lg:border-r">
         <div className="flex items-center justify-between px-5 py-4 lg:block">
           <div>
             <p className="text-lg font-bold tracking-tight text-brand-700">
@@ -58,7 +58,7 @@ export function AppShell({
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex items-center justify-between gap-4 border-b border-slate-200 bg-white px-5 py-3">
+        <header className="no-print flex items-center justify-between gap-4 border-b border-slate-200 bg-white px-5 py-3">
           <p className="truncate text-sm text-slate-600">{userLabel}</p>
           <form action={logoutAction}>
             <button type="submit" className="btn-secondary btn-sm">
@@ -66,7 +66,7 @@ export function AppShell({
             </button>
           </form>
         </header>
-        <main className="min-w-0 flex-1 px-5 py-6 lg:px-8">{children}</main>
+        <main className="print-page min-w-0 flex-1 px-5 py-6 lg:px-8">{children}</main>
       </div>
     </div>
   );

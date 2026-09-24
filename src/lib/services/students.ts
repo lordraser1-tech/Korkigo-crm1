@@ -1,10 +1,11 @@
-import { Prisma, type StudentStatus } from "@prisma/client";
+import { Prisma, type BillingMode, type StudentStatus } from "@prisma/client";
 import { z } from "zod";
 import type { Actor } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { ForbiddenError, NotFoundError, ValidationError } from "@/lib/errors";
 import { toAmount } from "@/lib/money";
 import { studentCreateSchema, studentUpdateSchema } from "@/lib/validation";
+import { getPaymentFlags, type PaymentFlag } from "@/lib/services/billing";
 
 export type StudentDto = {
   id: string;
@@ -26,6 +27,13 @@ export type StudentDto = {
    * nawet pobierane z bazy (patrz `selectFor`).
    */
   ratePerLesson: number | null;
+  /** Tryb rozliczeń ustala admin; nauczyciel go nie widzi. */
+  billingMode: BillingMode | null;
+  /**
+   * Jedyna informacja finansowa dostępna nauczycielowi: „OK” albo „zaległość”,
+   * bez kwot, dat i numerów rachunków.
+   */
+  paymentFlag: PaymentFlag | null;
   createdAt: string;
 };
 
@@ -46,11 +54,15 @@ const BASE_SELECT = {
   teacher: { select: { firstName: true, lastName: true } },
 } satisfies Prisma.StudentSelect;
 
+const ADMIN_SELECT = {
+  ...BASE_SELECT,
+  ratePerLesson: true,
+  billingMode: true,
+} satisfies Prisma.StudentSelect;
+
 /** Admin dostaje stawkę ucznia; nauczyciel nie pobiera jej z bazy w ogóle. */
 function selectFor(actor: Actor) {
-  return actor.role === "ADMIN"
-    ? { ...BASE_SELECT, ratePerLesson: true }
-    : BASE_SELECT;
+  return actor.role === "ADMIN" ? ADMIN_SELECT : BASE_SELECT;
 }
 
 /** Nauczyciel widzi wyłącznie uczniów przypisanych do siebie. */
@@ -60,9 +72,14 @@ export function studentScope(actor: Actor): Prisma.StudentWhereInput {
 
 type StudentRow = Prisma.StudentGetPayload<{ select: typeof BASE_SELECT }> & {
   ratePerLesson?: Prisma.Decimal;
+  billingMode?: BillingMode;
 };
 
-function mapStudent(row: StudentRow, actor: Actor): StudentDto {
+function mapStudent(
+  row: StudentRow,
+  actor: Actor,
+  paymentFlag: PaymentFlag | null = null
+): StudentDto {
   return {
     id: row.id,
     firstName: row.firstName,
@@ -84,6 +101,8 @@ function mapStudent(row: StudentRow, actor: Actor): StudentDto {
       actor.role === "ADMIN" && row.ratePerLesson !== undefined
         ? toAmount(row.ratePerLesson)
         : null,
+    billingMode: actor.role === "ADMIN" ? row.billingMode ?? null : null,
+    paymentFlag,
     createdAt: row.createdAt.toISOString(),
   };
 }
@@ -116,7 +135,13 @@ export async function listStudents(
     select: selectFor(actor),
     orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
   });
-  return rows.map((row) => mapStudent(row as StudentRow, actor));
+  const flags = await getPaymentFlags(
+    actor,
+    rows.map((row) => row.id)
+  );
+  return rows.map((row) =>
+    mapStudent(row as StudentRow, actor, flags.get(row.id) ?? null)
+  );
 }
 
 export async function getStudent(actor: Actor, id: string): Promise<StudentDto> {
@@ -126,10 +151,12 @@ export async function getStudent(actor: Actor, id: string): Promise<StudentDto> 
   });
   // Cudzy uczeń = 404, nie 403 — nie potwierdzamy, że taki rekord istnieje.
   if (!row) throw new NotFoundError("Nie znaleziono ucznia.");
-  return mapStudent(row as StudentRow, actor);
+  const flags = await getPaymentFlags(actor, [row.id]);
+  return mapStudent(row as StudentRow, actor, flags.get(row.id) ?? null);
 }
 
 const RATE_ONLY_ADMIN = "Stawkę ucznia ustala wyłącznie administrator.";
+const BILLING_ONLY_ADMIN = "Tryb rozliczeń ustala wyłącznie administrator.";
 
 async function assertTeacherExists(teacherId: string): Promise<void> {
   const exists = await prisma.teacherProfile.findUnique({
@@ -149,8 +176,9 @@ export async function createStudent(
   let ratePerLesson: number;
 
   if (actor.role === "TEACHER") {
-    // Nauczyciel dodaje uczniów wyłącznie do siebie i nie dotyka stawki.
+    // Nauczyciel dodaje uczniów wyłącznie do siebie i nie dotyka rozliczeń.
     if (data.ratePerLesson !== undefined) throw new ForbiddenError(RATE_ONLY_ADMIN);
+    if (data.billingMode !== undefined) throw new ForbiddenError(BILLING_ONLY_ADMIN);
     if (data.teacherId && data.teacherId !== actor.teacherProfileId) {
       throw new ForbiddenError("Możesz dodawać uczniów tylko do siebie.");
     }
@@ -176,10 +204,14 @@ export async function createStudent(
       status: data.status,
       teacherId,
       ratePerLesson: new Prisma.Decimal(ratePerLesson.toFixed(2)),
+      ...(actor.role === "ADMIN" && data.billingMode
+        ? { billingMode: data.billingMode }
+        : {}),
     },
     select: selectFor(actor),
   });
-  return mapStudent(created as StudentRow, actor);
+  const flags = await getPaymentFlags(actor, [created.id]);
+  return mapStudent(created as StudentRow, actor, flags.get(created.id) ?? null);
 }
 
 export async function updateStudent(
@@ -209,6 +241,7 @@ export async function updateStudent(
 
   if (actor.role === "TEACHER") {
     if (data.ratePerLesson !== undefined) throw new ForbiddenError(RATE_ONLY_ADMIN);
+    if (data.billingMode !== undefined) throw new ForbiddenError(BILLING_ONLY_ADMIN);
     if (data.teacherId !== undefined && data.teacherId !== actor.teacherProfileId) {
       throw new ForbiddenError("Nie możesz przepisać ucznia do innego nauczyciela.");
     }
@@ -216,6 +249,7 @@ export async function updateStudent(
     if (data.ratePerLesson !== undefined) {
       update.ratePerLesson = new Prisma.Decimal(data.ratePerLesson.toFixed(2));
     }
+    if (data.billingMode !== undefined) update.billingMode = data.billingMode;
     if (data.teacherId !== undefined) {
       if (data.teacherId) {
         await assertTeacherExists(data.teacherId);
@@ -231,7 +265,8 @@ export async function updateStudent(
     data: update,
     select: selectFor(actor),
   });
-  return mapStudent(updated as StudentRow, actor);
+  const flags = await getPaymentFlags(actor, [updated.id]);
+  return mapStudent(updated as StudentRow, actor, flags.get(updated.id) ?? null);
 }
 
 /** Twarde usunięcie zostawiamy adminowi i tylko dla ucznia bez historii lekcji. */

@@ -4,10 +4,13 @@ import { requirePage } from "@/lib/auth";
 import { getStudent } from "@/lib/services/students";
 import { listTeachers } from "@/lib/services/teachers";
 import { listLessons } from "@/lib/services/lessons";
+import { getStudentBilling } from "@/lib/services/billing";
 import { NotFoundError } from "@/lib/errors";
 import { deleteStudentAction, updateStudentAction } from "@/app/actions/students";
 import { ActionForm, Field, SelectField } from "@/components/forms";
 import { LessonList } from "@/components/lesson-list";
+import { StudentBillingCard } from "@/components/student-billing-card";
+import { BILLING_MODE_OPTIONS } from "@/components/billing";
 import { PageHeader, StudentStatusBadge } from "@/components/ui";
 
 export default async function AdminStudentPage({
@@ -22,9 +25,10 @@ export default async function AdminStudentPage({
     if (error instanceof NotFoundError) notFound();
     throw error;
   });
-  const [teachers, lessons] = await Promise.all([
+  const [teachers, lessons, billing] = await Promise.all([
     listTeachers(actor, { includeInactive: true }),
     listLessons(actor, { studentId: student.id }),
+    getStudentBilling(actor, student.id),
   ]);
 
   return (
@@ -62,6 +66,13 @@ export default async function AdminStudentPage({
                 defaultValue={student.ratePerLesson?.toFixed(2) ?? "0.00"}
                 hint="Widoczna wyłącznie w panelu administratora."
                 required
+              />
+              <SelectField
+                label="Tryb rozliczeń"
+                name="billingMode"
+                defaultValue={student.billingMode ?? "POSTPAID"}
+                options={BILLING_MODE_OPTIONS}
+                hint="Decyduje, jak wystawiamy rachunki temu uczniowi."
               />
               <SelectField
                 label="Nauczyciel"
@@ -112,7 +123,12 @@ export default async function AdminStudentPage({
           </div>
         </div>
 
-        <section>
+        <section className="space-y-6">
+          <StudentBillingCard
+            studentId={student.id}
+            billingMode={student.billingMode ?? "POSTPAID"}
+            billing={billing}
+          />
           <h2 className="mb-3 text-base font-semibold text-slate-900">
             Historia lekcji ({lessons.length})
           </h2>

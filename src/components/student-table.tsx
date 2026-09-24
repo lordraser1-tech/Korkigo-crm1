@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { StudentDto } from "@/lib/services/students";
 import { formatPLN } from "@/lib/money";
+import { PaymentFlagBadge } from "@/components/billing";
 import { EmptyState, StudentStatusBadge } from "@/components/ui";
 
 export function StudentTable({
@@ -29,6 +30,7 @@ export function StudentTable({
             <th className="px-4 py-2.5">Kontakt</th>
             {showTeacher ? <th className="px-4 py-2.5">Nauczyciel</th> : null}
             {showRate ? <th className="px-4 py-2.5">Stawka ucznia</th> : null}
+            <th className="px-4 py-2.5">Rozliczenia</th>
             <th className="px-4 py-2.5">Status</th>
           </tr>
         </thead>
@@ -66,6 +68,13 @@ export function StudentTable({
                   )}
                 </td>
               ) : null}
+              <td className="px-4 py-2.5">
+                {student.paymentFlag ? (
+                  <PaymentFlagBadge flag={student.paymentFlag} />
+                ) : (
+                  <span className="text-slate-400">—</span>
+                )}
+              </td>
               <td className="px-4 py-2.5">
                 <StudentStatusBadge status={student.status} />
               </td>

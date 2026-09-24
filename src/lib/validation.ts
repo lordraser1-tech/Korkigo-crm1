@@ -44,6 +44,7 @@ export const studentCreateSchema = z.object({
   status: studentStatusSchema.default("ACTIVE"),
   // Poniższe pola może ustawić WYŁĄCZNIE admin — serwis odrzuci je dla nauczyciela.
   ratePerLesson: amountSchema.optional(),
+  billingMode: z.enum(["POSTPAID", "PER_LESSON", "PREPAID"]).optional(),
   teacherId: optionalText(40),
 });
 
@@ -125,3 +126,73 @@ export const changePasswordSchema = z
     message: "Hasła nie są identyczne.",
     path: ["confirmPassword"],
   });
+
+// ---------- FAZA 2: PŁATNOŚCI I RACHUNKI ----------
+
+export const billingModeSchema = z.enum(["POSTPAID", "PER_LESSON", "PREPAID"]);
+
+export const paymentMethodSchema = z.enum(["TRANSFER", "CASH", "BLIK", "OTHER"]);
+
+const isoDate = trimmed.regex(
+  /^\d{4}-\d{2}-\d{2}$/,
+  "Podaj datę w formacie RRRR-MM-DD."
+);
+
+export const monthKeySchema = trimmed.regex(
+  /^\d{4}-\d{2}$/,
+  "Podaj miesiąc w formacie RRRR-MM."
+);
+
+export const monthlyInvoiceSchema = z.object({
+  studentId: trimmed.min(1, "Wybierz ucznia."),
+  month: monthKeySchema,
+  issuedAt: isoDate.optional(),
+  dueDays: z.coerce.number().int().min(0).max(120).optional(),
+  note: optionalText(500),
+});
+
+export const lessonInvoiceSchema = z.object({
+  lessonId: trimmed.min(1, "Wskaż lekcję."),
+  issuedAt: isoDate.optional(),
+  dueDays: z.coerce.number().int().min(0).max(120).optional(),
+  note: optionalText(500),
+});
+
+export const packageInvoiceSchema = z.object({
+  studentId: trimmed.min(1, "Wybierz ucznia."),
+  quantity: z.coerce
+    .number()
+    .int("Liczba lekcji w pakiecie musi być całkowita.")
+    .min(1, "Pakiet to minimum jedna lekcja.")
+    .max(200, "Pakiet jest zbyt duży."),
+  unitPrice: amountSchema.optional(),
+  description: optionalText(200),
+  issuedAt: isoDate.optional(),
+  dueDays: z.coerce.number().int().min(0).max(120).optional(),
+  note: optionalText(500),
+});
+
+export const paymentSchema = z.object({
+  studentId: trimmed.min(1, "Wybierz ucznia."),
+  invoiceId: optionalText(40),
+  amount: amountSchema.refine((v) => v > 0, {
+    message: "Kwota wpłaty musi być większa od zera.",
+  }),
+  paidAt: isoDate.optional(),
+  method: paymentMethodSchema.default("TRANSFER"),
+  note: optionalText(300),
+});
+
+export const billingSettingsSchema = z.object({
+  sellerName: optionalText(200),
+  sellerAddress: optionalText(300),
+  sellerContact: optionalText(200),
+  sellerTaxNote: optionalText(300),
+  bankAccount: optionalText(60),
+  paymentTermDays: z.coerce
+    .number()
+    .int("Termin podaj w pełnych dniach.")
+    .min(0)
+    .max(120),
+  invoiceFooter: optionalText(500),
+});

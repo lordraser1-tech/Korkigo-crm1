@@ -33,19 +33,19 @@ model User {
 // ---------- NAUCZYCIELE ----------
 
 model TeacherProfile {
-  id             String   @id @default(cuid())
-  userId         String   @unique
-  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id     String @id @default(cuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  firstName      String
-  lastName       String
-  phone          String?
-  level          String?  // np. "C1", uprawnienia/certyfikaty
-  ratePerLesson  Decimal  @db.Decimal(10, 2) // stawka WYPŁACANA nauczycielowi — ustala tylko admin
+  firstName     String
+  lastName      String
+  phone         String?
+  level         String? // np. "C1", uprawnienia/certyfikaty
+  ratePerLesson Decimal @db.Decimal(10, 2) // stawka WYPŁACANA nauczycielowi — ustala tylko admin
 
-  active         Boolean  @default(true)
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   students       Student[]
   lessons        Lesson[]
@@ -56,13 +56,13 @@ model TeacherProfile {
 
 // Dyspozycyjność — powtarzalne okna czasowe (grafik dyspozycji)
 model Availability {
-  id         String   @id @default(cuid())
-  teacherId  String
-  teacher    TeacherProfile @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  id        String         @id @default(cuid())
+  teacherId String
+  teacher   TeacherProfile @relation(fields: [teacherId], references: [id], onDelete: Cascade)
 
-  dayOfWeek  Int      // 0 = niedziela ... 6 = sobota
-  startTime  String   // "16:00"
-  endTime    String   // "20:00"
+  dayOfWeek Int // 0 = niedziela ... 6 = sobota
+  startTime String // "16:00"
+  endTime   String // "20:00"
 
   @@map("availabilities")
 }
@@ -76,33 +76,36 @@ enum StudentStatus {
 }
 
 model Student {
-  id              String   @id @default(cuid())
+  id String @id @default(cuid())
 
-  firstName       String
-  lastName        String
-  contactEmail    String?
-  contactPhone    String?
+  firstName    String
+  lastName     String
+  contactEmail String?
+  contactPhone String?
 
   // Dane rodzica/opiekuna (jeśli niepełnoletni)
-  parentName      String?
-  parentPhone     String?
-  parentEmail     String?
+  parentName  String?
+  parentPhone String?
+  parentEmail String?
 
-  languageLevel   String?  // np. "A2"
-  subject         String?  // np. "Polski ogólny", "Polski maturalny"
-  ratePerLesson   Decimal  @db.Decimal(10, 2) // stawka PŁACONA przez ucznia — NIGDY nie zwracaj w API dla roli TEACHER
+  languageLevel String? // np. "A2"
+  subject       String? // np. "Polski ogólny", "Polski maturalny"
+  ratePerLesson Decimal @db.Decimal(10, 2) // stawka PŁACONA przez ucznia — NIGDY nie zwracaj w API dla roli TEACHER
 
-  status          StudentStatus @default(ACTIVE)
+  status      StudentStatus @default(ACTIVE)
+  billingMode BillingMode   @default(POSTPAID) // jak ten uczeń płaci
 
-  teacherId       String?
-  teacher         TeacherProfile? @relation(fields: [teacherId], references: [id])
+  teacherId String?
+  teacher   TeacherProfile? @relation(fields: [teacherId], references: [id])
 
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  lessons         Lesson[]
-  notes           LessonNote[]
-  knowledgeBase   KnowledgeBaseEntry[]
+  lessons       Lesson[]
+  notes         LessonNote[]
+  knowledgeBase KnowledgeBaseEntry[]
+  invoices      Invoice[]
+  payments      Payment[]
 
   @@map("students")
 }
@@ -122,27 +125,28 @@ enum LessonStatus {
 }
 
 model Lesson {
-  id               String   @id @default(cuid())
+  id String @id @default(cuid())
 
-  studentId        String
-  student          Student  @relation(fields: [studentId], references: [id])
+  studentId String
+  student   Student @relation(fields: [studentId], references: [id])
 
-  teacherId        String
-  teacher          TeacherProfile @relation(fields: [teacherId], references: [id])
+  teacherId String
+  teacher   TeacherProfile @relation(fields: [teacherId], references: [id])
 
-  scheduledAt      DateTime
-  durationMinutes  Int      @default(60)
+  scheduledAt     DateTime
+  durationMinutes Int      @default(60)
 
-  type             LessonType
-  seriesId         String?  // wspólny identyfikator dla lekcji cyklicznych z jednego wzorca
-  status           LessonStatus @default(SCHEDULED)
+  type     LessonType
+  seriesId String? // wspólny identyfikator dla lekcji cyklicznych z jednego wzorca
+  status   LessonStatus @default(SCHEDULED)
 
-  googleEventId    String?  // zarezerwowane pod przyszłą synchronizację z Google Calendar
+  googleEventId String? // zarezerwowane pod przyszłą synchronizację z Google Calendar
 
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  note             LessonNote?
+  note        LessonNote?
+  invoiceItem InvoiceItem? // lekcja może trafić tylko na jeden rachunek
 
   @@map("lessons")
 }
@@ -151,19 +155,19 @@ model Lesson {
 // Szablon: co było / jak poszło / jaki cel / co dalej
 
 model LessonNote {
-  id          String   @id @default(cuid())
-  lessonId    String   @unique
-  lesson      Lesson   @relation(fields: [lessonId], references: [id], onDelete: Cascade)
-  studentId   String
-  student     Student  @relation(fields: [studentId], references: [id])
+  id        String  @id @default(cuid())
+  lessonId  String  @unique
+  lesson    Lesson  @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  studentId String
+  student   Student @relation(fields: [studentId], references: [id])
 
-  whatWeDid   String   @db.Text
-  howItWent   String   @db.Text
-  goal        String   @db.Text
-  nextSteps   String   @db.Text
+  whatWeDid String @db.Text
+  howItWent String @db.Text
+  goal      String @db.Text
+  nextSteps String @db.Text
 
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@map("lesson_notes")
 }
@@ -171,20 +175,133 @@ model LessonNote {
 // ---------- BAZA WIEDZY (per uczeń) ----------
 
 model KnowledgeBaseEntry {
-  id         String   @id @default(cuid())
-  studentId  String
-  student    Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  id        String  @id @default(cuid())
+  studentId String
+  student   Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
 
-  title      String
-  content    String   @db.Text
+  title   String
+  content String @db.Text
 
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@map("knowledge_base_entries")
 }
 
-// ---------- ZAREZERWOWANE NA KOLEJNE FAZY (jeszcze nie tworzymy) ----------
-// Faza 2: Payment, Invoice (numeracja automatyczna, status: paid/overdue)
+// ---------- PŁATNOŚCI I RACHUNKI (Faza 2) ----------
+
+enum BillingMode {
+  POSTPAID // rachunek na koniec miesiąca za lekcje zrealizowane
+  PER_LESSON // rachunek po każdej zrealizowanej lekcji
+  PREPAID // pakiet opłacany z góry, lekcje zdejmują jednostki z pakietu
+}
+
+enum InvoiceStatus {
+  ISSUED
+  CANCELLED
+}
+
+// Rachunek (działalność nierejestrowana — nie faktura VAT).
+// Numer nadawany automatycznie: "1/09/2026", numeracja resetuje się co miesiąc.
+model Invoice {
+  id          String @id @default(cuid())
+  number      String @unique
+  numberYear  Int
+  numberMonth Int
+  sequence    Int
+
+  studentId String
+  student   Student @relation(fields: [studentId], references: [id])
+
+  issuedAt DateTime      @default(now())
+  dueAt    DateTime
+  status   InvoiceStatus @default(ISSUED)
+
+  // Okres, którego dotyczy rachunek (puste dla pakietu przedpłaconego)
+  periodStart DateTime?
+  periodEnd   DateTime?
+
+  totalAmount Decimal @db.Decimal(10, 2)
+  note        String?
+
+  // Dane wystawcy skopiowane w chwili wystawienia — wydruk ma być niezmienny
+  sellerSnapshot String? @db.Text
+  buyerSnapshot  String? @db.Text
+
+  items    InvoiceItem[]
+  payments Payment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([numberYear, numberMonth, sequence])
+  @@index([studentId])
+  @@map("invoices")
+}
+
+model InvoiceItem {
+  id        String  @id @default(cuid())
+  invoiceId String
+  invoice   Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  description String
+  quantity    Int     @default(1)
+  unitPrice   Decimal @db.Decimal(10, 2)
+  amount      Decimal @db.Decimal(10, 2)
+
+  // Powiązanie z lekcją pilnuje, by ta sama lekcja nie trafiła na dwa rachunki
+  lessonId String? @unique
+  lesson   Lesson? @relation(fields: [lessonId], references: [id])
+
+  @@index([invoiceId])
+  @@map("invoice_items")
+}
+
+enum PaymentMethod {
+  TRANSFER
+  CASH
+  BLIK
+  OTHER
+}
+
+model Payment {
+  id String @id @default(cuid())
+
+  studentId String
+  student   Student @relation(fields: [studentId], references: [id])
+
+  // Wpłata bez rachunku to przedpłata na poczet przyszłych lekcji
+  invoiceId String?
+  invoice   Invoice? @relation(fields: [invoiceId], references: [id])
+
+  amount Decimal       @db.Decimal(10, 2)
+  paidAt DateTime      @default(now())
+  method PaymentMethod @default(TRANSFER)
+  note   String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([studentId])
+  @@index([invoiceId])
+  @@map("payments")
+}
+
+// Dane wystawcy na rachunku + domyślny termin płatności. Jeden rekord.
+model BillingSettings {
+  id              String   @id @default("singleton")
+  sellerName      String   @default("")
+  sellerAddress   String   @default("")
+  sellerContact   String   @default("")
+  sellerTaxNote   String   @default("Sprzedaż nieewidencjonowana — działalność nierejestrowana.")
+  bankAccount     String   @default("")
+  paymentTermDays Int      @default(7)
+  invoiceFooter   String   @default("")
+  updatedAt       DateTime @updatedAt
+
+  @@map("billing_settings")
+}
+
+// ---------- ZAREZERWOWANE NA KOLEJNE FAZY ----------
 // Faza 3: NdgQuarter (limit ustawowy, przeliczenia kwartalne), BusinessSwitch
 // Faza 4: wsparcie AI przy notatkach — nie wymaga zmian w schemacie, tylko w warstwie aplikacji

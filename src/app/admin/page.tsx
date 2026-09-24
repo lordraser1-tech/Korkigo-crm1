@@ -4,6 +4,7 @@ import { listStudents } from "@/lib/services/students";
 import { listTeachers } from "@/lib/services/teachers";
 import { countLessonsByStatus, upcomingLessons } from "@/lib/services/lessons";
 import { getAdminFinanceSummary } from "@/lib/services/finance";
+import { listReceivables } from "@/lib/services/billing";
 import { currentMonthKey, formatMonthLabel, monthRange } from "@/lib/datetime";
 import { formatPLN } from "@/lib/money";
 import { LessonList } from "@/components/lesson-list";
@@ -14,13 +15,18 @@ export default async function AdminDashboard() {
   const monthKey = currentMonthKey();
   const { from, to } = monthRange(monthKey);
 
-  const [students, teachers, counts, finance, upcoming] = await Promise.all([
-    listStudents(actor),
-    listTeachers(actor),
-    countLessonsByStatus(actor, { from, to }),
-    getAdminFinanceSummary(actor, monthKey),
-    upcomingLessons(actor, 6),
-  ]);
+  const [students, teachers, counts, finance, upcoming, receivables] =
+    await Promise.all([
+      listStudents(actor),
+      listTeachers(actor),
+      countLessonsByStatus(actor, { from, to }),
+      getAdminFinanceSummary(actor, monthKey),
+      upcomingLessons(actor, 6),
+      listReceivables(actor),
+    ]);
+
+  const overdue = receivables.filter((row) => row.overdueAmount > 0);
+  const overdueTotal = overdue.reduce((sum, row) => sum + row.overdueAmount, 0);
 
   const activeStudents = students.filter((s) => s.status === "ACTIVE").length;
   const missingRates = students.filter(
@@ -52,6 +58,34 @@ export default async function AdminDashboard() {
           hint={`przychód ${formatPLN(finance.revenue)} − koszt ${formatPLN(finance.cost)}`}
         />
       </div>
+
+      {overdue.length > 0 ? (
+        <div className="mt-6 rounded-xl border border-red-200 bg-red-50 p-4">
+          <p className="text-sm font-medium text-red-900">
+            Zaległości: {formatPLN(overdueTotal)} u {overdue.length}{" "}
+            {overdue.length === 1 ? "ucznia" : "uczniów"}.
+          </p>
+          <p className="mt-1 text-xs text-red-800">
+            {overdue.slice(0, 5).map((row, index) => (
+              <span key={row.studentId}>
+                {index > 0 ? ", " : ""}
+                <Link
+                  href={`/admin/uczniowie/${row.studentId}`}
+                  className="font-medium underline"
+                >
+                  {row.studentName}
+                </Link>{" "}
+                ({formatPLN(row.overdueAmount)})
+              </span>
+            ))}
+            {overdue.length > 5 ? " …" : ""}
+            {" — "}
+            <Link href="/admin/platnosci" className="font-medium underline">
+              przejdź do płatności
+            </Link>
+          </p>
+        </div>
+      ) : null}
 
       {missingRates.length > 0 ? (
         <div className="mt-6 rounded-xl border border-amber-200 bg-amber-50 p-4">

@@ -1,5 +1,5 @@
 import { describe } from "vitest";
-import { Prisma, PrismaClient } from "@prisma/client";
+import { Prisma, PrismaClient, type BillingMode } from "@prisma/client";
 import type { AdminActor, TeacherActor } from "@/lib/auth";
 
 export const prisma = new PrismaClient();
@@ -9,7 +9,8 @@ export const describeDb = process.env.DATABASE_URL ? describe : describe.skip;
 
 export async function resetDatabase(): Promise<void> {
   await prisma.$executeRawUnsafe(
-    `TRUNCATE TABLE "lesson_notes", "knowledge_base_entries", "lessons",
+    `TRUNCATE TABLE "payments", "invoice_items", "invoices", "billing_settings",
+     "lesson_notes", "knowledge_base_entries", "lessons",
      "availabilities", "students", "teacher_profiles", "users"
      RESTART IDENTITY CASCADE`
   );
@@ -53,7 +54,8 @@ export async function createTeacher(
 export async function createStudent(
   teacherId: string | null,
   rate = 100,
-  firstName = "Uczeń"
+  firstName = "Uczeń",
+  billingMode: BillingMode = "POSTPAID"
 ): Promise<string> {
   const student = await prisma.student.create({
     data: {
@@ -61,6 +63,7 @@ export async function createStudent(
       lastName: "Testowy",
       ratePerLesson: new Prisma.Decimal(rate.toFixed(2)),
       teacherId,
+      billingMode,
     },
   });
   return student.id;
