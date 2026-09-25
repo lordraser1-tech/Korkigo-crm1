@@ -16,6 +16,7 @@ import {
   updateBillingSettings,
 } from "../src/lib/services/billing";
 import { createNdgLimit, updateNdgSettings } from "../src/lib/services/ndg";
+import { sendMessage } from "../src/lib/services/messages";
 import type { AdminActor } from "../src/lib/auth";
 
 const prisma = new PrismaClient();
@@ -288,12 +289,36 @@ async function seedNdg(admin: AdminActor) {
   }
 }
 
+/** Dwie wiadomości demo: zbiorcza i pojedyncza — widać czerwoną kropkę. */
+async function seedMessages(admin: AdminActor) {
+  const teachers = await prisma.teacherProfile.findMany({
+    select: { id: true, firstName: true },
+    orderBy: { firstName: "asc" },
+  });
+  if (teachers.length === 0) return;
+
+  await sendMessage(admin, {
+    subject: "Rozliczenie miesiąca",
+    body:
+      "Przypominam o odznaczeniu statusów lekcji do końca tygodnia — " +
+      "na tej podstawie wystawiam rachunki i liczę wypłaty.",
+    recipient: "ALL",
+  });
+  await sendMessage(admin, {
+    subject: "Nowy uczeń",
+    body: `${teachers[0].firstName}, w przyszłym tygodniu dopiszę Ci nowego ucznia. Sprawdź, proszę, swoją dyspozycyjność w zakładce „Grafik i dyspozycja”.`,
+    recipient: teachers[0].id,
+  });
+  console.log("✔ Wiadomości demo: 1 zbiorcza + 1 pojedyncza");
+}
+
 async function main() {
   const admin = await seedAdmin();
   if (process.env.SEED_DEMO === "true" || process.argv.includes("--demo")) {
     await seedDemo();
     await seedBilling(admin);
     await seedNdg(admin);
+    await seedMessages(admin);
   }
 }
 

@@ -229,3 +229,19 @@ export const ndgLimitSchema = z.object({
   }),
   note: optionalText(200),
 });
+
+// ---------- WIADOMOŚCI ----------
+
+export const messageSchema = z
+  .object({
+    subject: trimmed.min(1, "Podaj temat.").max(160),
+    body: trimmed.min(1, "Treść nie może być pusta.").max(5000),
+    /** "ALL" = wszyscy aktywni nauczyciele, inaczej identyfikator nauczyciela. */
+    recipient: trimmed.min(1, "Wybierz adresata."),
+  })
+  .transform((value) => ({
+    subject: value.subject,
+    body: value.body,
+    broadcast: value.recipient === "ALL",
+    teacherId: value.recipient === "ALL" ? null : value.recipient,
+  }));

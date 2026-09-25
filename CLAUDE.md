@@ -43,6 +43,9 @@ zaległości i rachunki z automatyczną numeracją gotowe do druku oraz zakładk
 „Grafik i dyspozycja” spinająca dyspozycyjność, zapisy uczniów i status
 płatności każdej lekcji.
 
+Z menu makiety działają już wszystkie pozycje poza „Notatki z lekcji”
+i „Baza wiedzy” (faza 2, jeszcze nie ruszone).
+
 Makieta panelu nauczyciela już istnieje (Claude Artifact — Design canvas),
 z menu: Pulpit, Moi uczniowie, Kalendarz lekcji, Moje wypłaty, Notatki z lekcji,
 Baza wiedzy, Wiadomości, Ustawienia.
@@ -154,3 +157,19 @@ Niezmienniki:
 Kolory statusów pochodzą ze stałej palety (`--color-status-*` w `globals.css`)
 i zawsze idą w parze z ikoną i podpisem — kolor nigdy nie niesie znaczenia sam.
 Testy: `tests/ndg.test.ts`.
+
+## Wiadomości
+
+`src/lib/services/messages.ts`, panele `/admin/wiadomosci` i
+`/nauczyciel/wiadomosci`. Pisze wyłącznie ADMIN — do jednego nauczyciela albo
+do wszystkich aktywnych; nauczyciel tylko czyta swoje.
+
+- stan przeczytania siedzi w `MessageRecipient.readAt`, osobno dla każdego
+  odbiorcy — wysyłka zbiorcza to ta sama ścieżka co pojedyncza,
+- `countUnreadMessages()` zasila czerwoną kropkę przy zakładce „Wiadomości”
+  (pole `dot`/`count` w `NavItem`, liczone w layoucie nauczyciela),
+- nauczyciel nie dostaje listy pozostałych odbiorców (`mapMessage` zwraca mu
+  pustą tablicę), a oznaczenie cudzej wiadomości daje `NotFoundError`,
+- wysyłka zbiorcza bierze nauczycieli aktywnych w chwili wysłania.
+
+Testy: `tests/messages.test.ts`.

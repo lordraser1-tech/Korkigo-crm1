@@ -7,6 +7,10 @@ export type NavItem = {
   label: string;
   /** Pozycja z makiety, która przyjdzie w kolejnej fazie — widoczna, nieklikalna. */
   soon?: boolean;
+  /** Czerwona kropka: coś nowego czeka pod tym linkiem. */
+  dot?: boolean;
+  /** Liczba przy kropce (np. nieprzeczytane wiadomości). */
+  count?: number;
 };
 
 export function AppShell({
@@ -48,9 +52,27 @@ export function AppShell({
               <Link
                 key={item.href}
                 href={item.href}
-                className="whitespace-nowrap rounded-lg px-3 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-brand-50 hover:text-brand-700"
+                className="flex items-center justify-between gap-2 whitespace-nowrap rounded-lg px-3 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-brand-50 hover:text-brand-700"
               >
-                {item.label}
+                <span className="flex items-center gap-2">
+                  {item.label}
+                  {item.dot ? (
+                    <span
+                      className="inline-block h-2 w-2 shrink-0 rounded-full bg-red-600"
+                      aria-hidden="true"
+                    />
+                  ) : null}
+                </span>
+                {item.dot ? (
+                  <span className="rounded-full bg-red-600 px-1.5 text-[11px] font-semibold text-white">
+                    {item.count && item.count > 0 ? item.count : ""}
+                    <span className="sr-only">
+                      {item.count && item.count > 0
+                        ? `${item.count} nieprzeczytanych`
+                        : "nowe"}
+                    </span>
+                  </span>
+                ) : null}
               </Link>
             )
           )}

@@ -26,6 +26,7 @@ model User {
   updatedAt    DateTime @updatedAt
 
   teacherProfile TeacherProfile?
+  sentMessages   Message[]
 
   @@map("users")
 }
@@ -50,6 +51,7 @@ model TeacherProfile {
   students       Student[]
   lessons        Lesson[]
   availabilities Availability[]
+  messages       MessageRecipient[]
 
   @@map("teacher_profiles")
 }
@@ -346,6 +348,46 @@ model NdgMonthlyLimit {
   createdAt DateTime @default(now())
 
   @@map("ndg_monthly_limits")
+}
+
+// ---------- WIADOMOŚCI (admin -> nauczyciele) ----------
+
+/// Wiadomość wysyłana przez administratora: do jednego nauczyciela albo do
+/// wszystkich. Stan przeczytania trzyma `MessageRecipient`, osobno dla każdego
+/// odbiorcy — dzięki temu wysyłka zbiorcza działa tak samo jak pojedyncza.
+model Message {
+  id String @id @default(cuid())
+
+  senderId String
+  sender   User   @relation(fields: [senderId], references: [id])
+
+  subject   String
+  body      String  @db.Text
+  /// true = wysłana do wszystkich aktywnych nauczycieli w chwili wysyłki
+  broadcast Boolean @default(false)
+
+  createdAt DateTime @default(now())
+
+  recipients MessageRecipient[]
+
+  @@index([createdAt])
+  @@map("messages")
+}
+
+model MessageRecipient {
+  id String @id @default(cuid())
+
+  messageId String
+  message   Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  teacherId String
+  teacher   TeacherProfile @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+
+  readAt DateTime?
+
+  @@unique([messageId, teacherId])
+  @@index([teacherId, readAt])
+  @@map("message_recipients")
 }
 
 // ---------- ZAREZERWOWANE NA KOLEJNE FAZY ----------

@@ -1,18 +1,26 @@
 import { requirePage } from "@/lib/auth";
 import { getMyTeacherProfile } from "@/lib/services/teachers";
+import { countUnreadMessages } from "@/lib/services/messages";
 import { AppShell, type NavItem } from "@/components/app-shell";
 
-const NAV: NavItem[] = [
-  { href: "/nauczyciel", label: "Pulpit" },
-  { href: "/nauczyciel/uczniowie", label: "Moi uczniowie" },
-  { href: "/nauczyciel/grafik", label: "Grafik i dyspozycja" },
-  { href: "/nauczyciel/kalendarz", label: "Kalendarz lekcji" },
-  { href: "/nauczyciel/wyplaty", label: "Moje wypłaty" },
-  { href: "#", label: "Notatki z lekcji", soon: true },
-  { href: "#", label: "Baza wiedzy", soon: true },
-  { href: "#", label: "Wiadomości", soon: true },
-  { href: "/nauczyciel/ustawienia", label: "Ustawienia" },
-];
+function buildNav(unread: number): NavItem[] {
+  return [
+    { href: "/nauczyciel", label: "Pulpit" },
+    { href: "/nauczyciel/uczniowie", label: "Moi uczniowie" },
+    { href: "/nauczyciel/grafik", label: "Grafik i dyspozycja" },
+    { href: "/nauczyciel/kalendarz", label: "Kalendarz lekcji" },
+    { href: "/nauczyciel/wyplaty", label: "Moje wypłaty" },
+    { href: "#", label: "Notatki z lekcji", soon: true },
+    { href: "#", label: "Baza wiedzy", soon: true },
+    {
+      href: "/nauczyciel/wiadomosci",
+      label: "Wiadomości",
+      dot: unread > 0,
+      count: unread,
+    },
+    { href: "/nauczyciel/ustawienia", label: "Ustawienia" },
+  ];
+}
 
 export default async function TeacherLayout({
   children,
@@ -20,11 +28,14 @@ export default async function TeacherLayout({
   children: React.ReactNode;
 }) {
   const actor = await requirePage("TEACHER");
-  const profile = await getMyTeacherProfile(actor);
+  const [profile, unread] = await Promise.all([
+    getMyTeacherProfile(actor),
+    countUnreadMessages(actor),
+  ]);
 
   return (
     <AppShell
-      nav={NAV}
+      nav={buildNav(unread)}
       roleLabel="Panel nauczyciela"
       userLabel={`${profile.fullName} · ${actor.email}`}
     >

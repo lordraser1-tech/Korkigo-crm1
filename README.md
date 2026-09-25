@@ -51,6 +51,7 @@ jest jedynym zabezpieczeniem.
 | Rachunki, wpłaty, salda | pełny dostęp | `403` — widzi wyłącznie flagę „Rozliczenia OK / Zaległość”, bez kwot |
 | Grafik i dyspozycyjność | wszyscy nauczyciele, z filtrem | tylko własny grafik — cudze `teacherId` jest ignorowane |
 | Moduł NDG i statystyki | pełny dostęp | `403` na całym module |
+| Wiadomości | wysyła i widzi skrzynkę nadawczą z odczytami | tylko wiadomości do siebie; nie wysyła i nie widzi pozostałych odbiorców |
 | Status płatności lekcji | ze wskazaniem rachunku | sam status (opłacona / do zapłaty / po terminie), bez numeru i kwoty |
 | Tryb rozliczeń ucznia | ustawia | nie widzi i nie zmienia (`403`) |
 | Nauczyciele | pełna lista i dane | tylko własny profil (`404` na cudzy) |
@@ -98,6 +99,22 @@ Zasady, których pilnuje warstwa serwisowa (`src/lib/services/billing.ts`):
 
 Wydruk: `/admin/rachunki/{id}` ma widok dokumentu i przycisk „Drukuj” —
 nawigacja jest ukrywana przez `@media print`.
+
+## Wiadomości
+
+Administrator pisze do **jednego nauczyciela albo do wszystkich naraz**
+(`/admin/wiadomosci`). Nauczyciel czyta swoją skrzynkę w `/nauczyciel/wiadomosci`.
+
+- stan przeczytania jest **per odbiorca** (`MessageRecipient.readAt`), więc
+  wysyłka zbiorcza działa dokładnie tak samo jak pojedyncza,
+- przy zakładce „Wiadomości” w menu nauczyciela zapala się **czerwona kropka
+  z liczbą nieprzeczytanych**; gaśnie po oznaczeniu wiadomości jako
+  przeczytanej (pojedynczo albo hurtem),
+- wysyłka zbiorcza trafia do nauczycieli **aktywnych w chwili wysłania** —
+  konto założone później nie dostaje starych wiadomości,
+- nauczyciel nie widzi listy pozostałych odbiorców; admin widzi potwierdzenia
+  odczytu z datami,
+- usunięcie wiadomości przez admina kasuje ją też ze skrzynek nauczycieli.
 
 ## Limit NDG i statystyki finansowe
 
@@ -185,7 +202,7 @@ src/
   lib/
     auth.ts            # Actor (kto pyta) + strażnicy ról
     services/          # LOGIKA I UPRAWNIENIA: students, teachers, lessons,
-                       # finance, billing, schedule, ndg
+                       # finance, billing, schedule, ndg, messages
     validation.ts      # schematy Zod
     datetime.ts        # czas warszawski <-> UTC, lekcje cykliczne
 tests/                 # testy uprawnień i konwersji czasu
@@ -215,6 +232,8 @@ Wszystkie endpointy wymagają ciasteczka sesji i same sprawdzają rolę.
 | `GET` | `/api/receivables` | salda i zaległości wszystkich uczniów |
 | `GET`/`PUT` | `/api/billing-settings` | dane wystawcy i termin płatności |
 | `GET` | `/api/schedule` | `?week=RRRR-MM-DD&teacherId=` — grafik tygodnia; nauczyciel zawsze dostaje własny |
+| `GET`/`POST` | `/api/messages` | GET: admin — skrzynka nadawcza, nauczyciel — odbiorcza. POST (admin): `{subject, body, recipient: "ALL" \| teacherId}` |
+| `POST`/`DELETE` | `/api/messages/{id}` | POST: nauczyciel oznacza swoją wiadomość jako przeczytaną. DELETE: admin usuwa |
 | `GET` | `/api/ndg` | `?year=&period=` — przegląd limitu; `?scope=MONTH\|QUARTER\|YEAR` — statystyki finansowe |
 
 Błędy mają kształt `{ "error": { "code", "message" } }`,
@@ -246,6 +265,8 @@ ignorowanie cudzego `teacherId`, wyliczanie wolnych godzin i statusy płatności
 lekcji (także dla pakietów). Moduł NDG ma własny zestaw: sumowanie limitu
 kwartału z limitów miesięcy, zmianę kwoty w trakcie roku, progi ostrzeżeń,
 prognozę, obie podstawy przychodu i pracę po wyłączeniu pilnowania limitu.
+Wiadomości sprawdzają zakres skrzynek, wysyłkę zbiorczą (z pominięciem kont
+zablokowanych) i licznik nieprzeczytanych stojący za czerwoną kropką.
 
 Bez `DATABASE_URL` testy integracyjne są pomijane (uruchomią się tylko testy
 konwersji czasu).
