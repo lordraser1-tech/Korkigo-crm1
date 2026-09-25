@@ -110,21 +110,31 @@ describeDb("rachunki i płatności", () => {
     });
 
     it("flaga nauczyciela nie zawiera żadnej kwoty ani numeru rachunku", async () => {
-      await completedLesson("2026-01-12");
+      // Stawka z groszami: taki ciąg nie może przypadkiem wpaść w cuid,
+      // w przeciwieństwie do okrągłej setki.
+      const droższyId = await createStudent(
+        anna.teacherProfileId,
+        333.77,
+        "Sofia"
+      );
+      await completedLesson("2026-01-12", droższyId);
       const invoice = await createMonthlyInvoice(admin, {
-        studentId,
+        studentId: droższyId,
         month: "2026-01",
         issuedAt: "2026-01-31",
         dueDays: 7,
       });
 
-      const [student] = await listStudents(anna);
+      const student = (await listStudents(anna)).find(
+        (row) => row.id === droższyId
+      )!;
       expect(student.paymentFlag).toBe("OVERDUE");
       expect(student.ratePerLesson).toBeNull();
       expect(student.billingMode).toBeNull();
 
       const payload = JSON.stringify(student);
-      expect(payload).not.toContain("100");
+      expect(payload).not.toContain("333.77");
+      expect(payload).not.toContain("333,77");
       expect(payload).not.toContain(invoice.number);
     });
 

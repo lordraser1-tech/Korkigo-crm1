@@ -5,6 +5,7 @@ import type { LessonDto } from "@/lib/services/lessons";
 import type { LessonPaymentInfo } from "@/lib/services/billing";
 import { LessonPaymentBadge } from "@/components/billing";
 import { ConfirmButton, SubmitButton } from "@/components/forms";
+import { LessonTopicForm } from "@/components/lesson-topic-form";
 import { EmptyState, LessonStatusBadge } from "@/components/ui";
 
 function groupByDay(lessons: LessonDto[]): Array<[string, LessonDto[]]> {
@@ -44,6 +45,7 @@ export function LessonList({
   canDelete = true,
   emptyText = "Brak lekcji w wybranym okresie.",
   payments,
+  canEditTopic = true,
 }: {
   lessons: LessonDto[];
   showTeacher?: boolean;
@@ -52,6 +54,8 @@ export function LessonList({
   emptyText?: string;
   /** Status płatności per lekcja — bez kwot, więc bezpieczny też dla nauczyciela. */
   payments?: Map<string, LessonPaymentInfo>;
+  /** Temat zajęć wpisywany przy lekcji. */
+  canEditTopic?: boolean;
 }) {
   if (lessons.length === 0) return <EmptyState>{emptyText}</EmptyState>;
 
@@ -92,6 +96,13 @@ export function LessonList({
                   ) : null}
                   {lesson.seriesId ? (
                     <span className="ml-2 text-xs text-slate-400">cykliczna</span>
+                  ) : null}
+                  {canEditTopic ? (
+                    <LessonTopicForm lessonId={lesson.id} topic={lesson.topic} />
+                  ) : lesson.topic ? (
+                    <p className="mt-1 text-xs text-slate-600">
+                      Temat: {lesson.topic}
+                    </p>
                   ) : null}
                 </div>
                 <LessonStatusBadge status={lesson.status} />

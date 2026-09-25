@@ -3,6 +3,7 @@ import type { ScheduleView } from "@/lib/services/schedule";
 import { deleteAvailabilityAction } from "@/app/actions/teachers";
 import { ConfirmButton } from "@/components/forms";
 import { LessonPaymentBadge } from "@/components/billing";
+import { LessonTopicForm } from "@/components/lesson-topic-form";
 import { formatTime } from "@/lib/datetime";
 import { LessonStatusBadge, WEEKDAY_LABEL } from "@/components/ui";
 
@@ -107,6 +108,11 @@ export function ScheduleWeek({
                     {showTeacher ? (
                       <p className="text-[11px] text-slate-500">{lesson.teacherName}</p>
                     ) : null}
+                    <LessonTopicForm
+                      lessonId={lesson.id}
+                      topic={lesson.topic}
+                      compact
+                    />
                     <div className="mt-1.5 flex flex-wrap gap-1">
                       <LessonStatusBadge status={lesson.status} />
                       <LessonPaymentBadge payment={lesson.payment} />

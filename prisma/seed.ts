@@ -143,6 +143,13 @@ async function seedDemo() {
         },
       });
 
+      const topics = [
+        "Czas przeszły — ćwiczenia",
+        "Słownictwo: praca i zawody",
+        "Odmiana przez przypadki",
+        "Rozmowa o planach — konwersacje",
+      ];
+
       // Cztery lekcje tygodniowo wstecz (zrealizowane) i cztery do przodu.
       const seriesId = crypto.randomUUID();
       const dayOfWeek = studentIndex === 0 ? 1 : 3;
@@ -164,6 +171,11 @@ async function seedDemo() {
                   ? "CANCELLED"
                   : "COMPLETED"
                 : "SCHEDULED",
+            // Temat uzupełniamy tylko dla lekcji, które się odbyły.
+            topic:
+              scheduledAt < new Date() && week !== -2
+                ? topics[(week + 4) % topics.length]
+                : null,
           },
         });
       }

@@ -127,6 +127,12 @@ dyspozycyjności, lekcji i statusu płatności każdej lekcji.
 - wolne godziny to okna dyspozycyjności pocięte na sloty po 60 minut minus
   lekcje kolidujące terminem; lekcja odwołana zwalnia termin.
 
+Temat zajęć (`Lesson.topic`) wpisuje się przy lekcji — w kalendarzu i w kafelku
+grafiku, bez osobnej zakładki. Edycja idzie przez `setLessonTopic()`, osobną
+ścieżkę od `updateLesson()`, bo temat wolno dopisać także do lekcji ujętej na
+rachunku (zamrożenie dotyczy terminu i statusu, nie opisu). To krótka notka —
+pełny szablon notatki z lekcji to wciąż `LessonNote` z fazy 2.
+
 `getLessonPaymentStates()` (w `billing.ts`) odpowiada na pytanie „za którą lekcję
 zapłacono”. Nauczyciel dostaje sam status — bez numeru rachunku i kwoty — i tylko
 dla swoich lekcji. W trybie `PREPAID` jednostki pakietu idą chronologicznie:

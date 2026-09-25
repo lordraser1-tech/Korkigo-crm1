@@ -245,3 +245,8 @@ export const messageSchema = z
     broadcast: value.recipient === "ALL",
     teacherId: value.recipient === "ALL" ? null : value.recipient,
   }));
+
+/** Temat zajęć wpisywany przy lekcji; pusty tekst czyści pole. */
+export const lessonTopicSchema = z.object({
+  topic: optionalText(200),
+});

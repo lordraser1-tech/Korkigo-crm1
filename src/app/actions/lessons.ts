@@ -7,6 +7,7 @@ import {
   deleteFutureSeries,
   deleteLesson,
   setLessonStatus,
+  setLessonTopic,
   updateLesson,
 } from "@/lib/services/lessons";
 import {
@@ -47,6 +48,28 @@ export async function updateLessonAction(
     await updateLesson(actor, id, rest as never);
     revalidatePanels();
     return { ok: true, message: "Zapisano zmiany w lekcji." };
+  } catch (error) {
+    return toActionState(error);
+  }
+}
+
+/** Temat zajęć wpisywany przy lekcji — w kalendarzu i w grafiku. */
+export async function setLessonTopicAction(
+  _prev: ActionState,
+  formData: FormData
+): Promise<ActionState> {
+  try {
+    const actor = await requireActor();
+    const id = formData.get("id");
+    if (typeof id !== "string") throw new Error("Brak identyfikatora lekcji.");
+    const lesson = await setLessonTopic(actor, id, {
+      topic: formData.get("topic"),
+    } as never);
+    revalidatePanels();
+    return {
+      ok: true,
+      message: lesson.topic ? "Zapisano temat." : "Temat usunięty.",
+    };
   } catch (error) {
     return toActionState(error);
   }

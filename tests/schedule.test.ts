@@ -2,7 +2,7 @@
  * Grafik i dyspozycja: zakres widoczności oraz powiązanie lekcji z płatnością.
  */
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
-import { ForbiddenError } from "@/lib/errors";
+import { ForbiddenError, NotFoundError, ValidationError } from "@/lib/errors";
 import { getSchedule, listAllAvailability } from "@/lib/services/schedule";
 import {
   createLessonInvoice,
@@ -12,6 +12,11 @@ import {
   recordPayment,
 } from "@/lib/services/billing";
 import { createAvailability } from "@/lib/services/teachers";
+import {
+  listLessons,
+  setLessonStatus,
+  setLessonTopic,
+} from "@/lib/services/lessons";
 import { weekStartKey } from "@/lib/datetime";
 import {
   createAdmin,
@@ -53,10 +58,6 @@ describeDb("grafik i dyspozycja", () => {
       startTime: "10:00",
       endTime: "12:00",
     });
-  });
-
-  afterAll(async () => {
-    await prisma.$disconnect();
   });
 
   // ---------- WIDOCZNOŚĆ ----------
@@ -328,4 +329,98 @@ describeDb("grafik i dyspozycja", () => {
     expect(schedule.totals.lessons).toBe(1);
     expect(schedule.totals.unpaidLessons).toBe(1);
   });
+});
+
+describeDb("temat zajęć", () => {
+  const WEEK = weekStartKey("2026-09-21");
+  let admin: Awaited<ReturnType<typeof createAdmin>>;
+  let anna: Awaited<ReturnType<typeof createTeacher>>;
+  let piotr: Awaited<ReturnType<typeof createTeacher>>;
+  let lessonId: string;
+  let studentId: string;
+
+  beforeEach(async () => {
+    await resetDatabase();
+    admin = await createAdmin();
+    anna = await createTeacher("anna@test.pl", 60, "Anna");
+    piotr = await createTeacher("piotr@test.pl", 55, "Piotr");
+    studentId = await createStudent(anna.teacherProfileId, 100, "Olena");
+    lessonId = await createLesson({
+      studentId,
+      teacherId: anna.teacherProfileId,
+      scheduledAt: new Date("2026-09-21T14:00:00Z"),
+      status: "COMPLETED",
+    });
+  });
+
+  it("nauczyciel wpisuje temat własnej lekcji", async () => {
+    const updated = await setLessonTopic(anna, lessonId, {
+      topic: "Czas przeszły — ćwiczenia",
+    });
+    expect(updated.topic).toBe("Czas przeszły — ćwiczenia");
+
+    const [fromList] = await listLessons(anna);
+    expect(fromList.topic).toBe("Czas przeszły — ćwiczenia");
+  });
+
+  it("pusty temat czyści pole", async () => {
+    await setLessonTopic(anna, lessonId, { topic: "Do usunięcia" });
+    const cleared = await setLessonTopic(anna, lessonId, { topic: "" });
+    expect(cleared.topic).toBeNull();
+  });
+
+  it("nauczyciel nie wpisze tematu cudzej lekcji", async () => {
+    const obcyStudentId = await createStudent(
+      piotr.teacherProfileId,
+      150,
+      "Dzmitry"
+    );
+    const obcaLekcja = await createLesson({
+      studentId: obcyStudentId,
+      teacherId: piotr.teacherProfileId,
+      scheduledAt: new Date("2026-09-21T15:00:00Z"),
+    });
+    await expect(
+      setLessonTopic(anna, obcaLekcja, { topic: "Podmiana" })
+    ).rejects.toBeInstanceOf(NotFoundError);
+  });
+
+  it("admin może poprawić temat każdej lekcji", async () => {
+    const updated = await setLessonTopic(admin, lessonId, { topic: "Korekta" });
+    expect(updated.topic).toBe("Korekta");
+  });
+
+  it("temat wolno dopisać także do lekcji ujętej na rachunku", async () => {
+    await createLessonInvoice(admin, { lessonId, issuedAt: "2026-09-21" });
+
+    // Termin i status są zamrożone…
+    await expect(
+      setLessonStatus(anna, lessonId, "CANCELLED")
+    ).rejects.toBeInstanceOf(ValidationError);
+
+    // …ale opis zajęć nie zmienia treści dokumentu, więc przechodzi.
+    const updated = await setLessonTopic(anna, lessonId, {
+      topic: "Lekcja rozliczona",
+    });
+    expect(updated.topic).toBe("Lekcja rozliczona");
+  });
+
+  it("temat widać w grafiku", async () => {
+    await setLessonTopic(anna, lessonId, { topic: "Słownictwo — praca" });
+    const schedule = await getSchedule(anna, { weekKey: WEEK });
+    const lessons = schedule.days.flatMap((day) => day.lessons);
+    expect(lessons[0].topic).toBe("Słownictwo — praca");
+  });
+
+  it("zbyt długi temat jest odrzucany", async () => {
+    await expect(
+      setLessonTopic(anna, lessonId, { topic: "x".repeat(201) })
+    ).rejects.toThrow();
+  });
+});
+
+// Jedno rozłączenie na plik — wcześniej każdy blok zamykał klienta u siebie,
+// przez co drugi blok startował na rozłączonej Prismie.
+afterAll(async () => {
+  await prisma.$disconnect();
 });

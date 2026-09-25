@@ -142,6 +142,11 @@ model Lesson {
   seriesId String? // wspólny identyfikator dla lekcji cyklicznych z jednego wzorca
   status   LessonStatus @default(SCHEDULED)
 
+  /// Temat zajęć wpisywany przez nauczyciela przy samej lekcji (krótka notka).
+  /// Pełny szablon notatki (co było / jak poszło / cel / co dalej) to osobny
+  /// model `LessonNote` z fazy 2.
+  topic String?
+
   googleEventId String? // zarezerwowane pod przyszłą synchronizację z Google Calendar
 
   createdAt DateTime @default(now())

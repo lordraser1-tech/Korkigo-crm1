@@ -5,7 +5,11 @@ import type { Actor } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { ForbiddenError, NotFoundError, ValidationError } from "@/lib/errors";
 import { addWeeksToWallClock, wallClockToUtc } from "@/lib/datetime";
-import { lessonCreateSchema, lessonUpdateSchema } from "@/lib/validation";
+import {
+  lessonCreateSchema,
+  lessonTopicSchema,
+  lessonUpdateSchema,
+} from "@/lib/validation";
 
 export type LessonDto = {
   id: string;
@@ -19,6 +23,8 @@ export type LessonDto = {
   type: LessonType;
   seriesId: string | null;
   status: LessonStatus;
+  /** Temat zajęć — wpisuje nauczyciel przy swojej lekcji. */
+  topic: string | null;
 };
 
 const LESSON_SELECT = {
@@ -30,6 +36,7 @@ const LESSON_SELECT = {
   type: true,
   seriesId: true,
   status: true,
+  topic: true,
   student: { select: { firstName: true, lastName: true } },
   teacher: { select: { firstName: true, lastName: true } },
 } satisfies Prisma.LessonSelect;
@@ -51,6 +58,7 @@ function mapLesson(row: LessonRow): LessonDto {
     type: row.type,
     seriesId: row.seriesId,
     status: row.status,
+    topic: row.topic,
   };
 }
 
@@ -243,6 +251,7 @@ export async function updateLesson(
   if (!existing) throw new NotFoundError("Nie znaleziono lekcji.");
   await assertNotInvoiced(id);
 
+
   const update: Prisma.LessonUpdateInput = {};
   if (data.scheduledAt !== undefined) {
     update.scheduledAt = wallClockToUtc(data.scheduledAt);
@@ -255,6 +264,32 @@ export async function updateLesson(
   const updated = await prisma.lesson.update({
     where: { id },
     data: update,
+    select: LESSON_SELECT,
+  });
+  return mapLesson(updated);
+}
+
+/**
+ * Temat zajęć. Osobna ścieżka od `updateLesson`, bo opisu wolno dopisać także
+ * do lekcji ujętej już na rachunku — nie zmienia treści dokumentu, a nauczyciel
+ * i tak uzupełnia temat po zajęciach.
+ */
+export async function setLessonTopic(
+  actor: Actor,
+  id: string,
+  input: z.input<typeof lessonTopicSchema>
+): Promise<LessonDto> {
+  const { topic } = lessonTopicSchema.parse(input);
+
+  const existing = await prisma.lesson.findFirst({
+    where: { id, ...lessonScope(actor) },
+    select: { id: true },
+  });
+  if (!existing) throw new NotFoundError("Nie znaleziono lekcji.");
+
+  const updated = await prisma.lesson.update({
+    where: { id },
+    data: { topic },
     select: LESSON_SELECT,
   });
   return mapLesson(updated);

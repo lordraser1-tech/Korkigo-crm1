@@ -100,6 +100,22 @@ Zasady, których pilnuje warstwa serwisowa (`src/lib/services/billing.ts`):
 Wydruk: `/admin/rachunki/{id}` ma widok dokumentu i przycisk „Drukuj” —
 nawigacja jest ukrywana przez `@media print`.
 
+## Temat zajęć
+
+Nauczyciel wpisuje temat **przy samej lekcji** — w kalendarzu (`Kalendarz lekcji`)
+i w kafelku dnia w `Grafiku`. Bez osobnej zakładki: pole jest zwinięte do linijki
+„+ Dodaj temat”, a po zapisaniu pokazuje „Temat: …”. Temat widać wszędzie tam,
+gdzie widać lekcję — również w historii lekcji ucznia i w panelu admina.
+
+- to krótka notka (`Lesson.topic`, do 200 znaków), a nie pełny szablon notatki
+  z lekcji (co było / jak poszło / cel / co dalej) — ten zostaje na fazę 2
+  jako osobny model `LessonNote`,
+- **temat wolno dopisać także do lekcji ujętej na rachunku**: termin i status są
+  wtedy zamrożone, ale opis nie zmienia treści dokumentu, a nauczyciel uzupełnia
+  go po zajęciach,
+- zakres jak wszędzie: nauczyciel edytuje temat tylko własnych lekcji (cudza
+  lekcja to `404`), admin może poprawić każdy.
+
 ## Wiadomości
 
 Administrator pisze do **jednego nauczyciela albo do wszystkich naraz**
