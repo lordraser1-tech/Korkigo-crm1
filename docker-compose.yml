@@ -1,0 +1,25 @@
+# Baza do testów na własnym komputerze.
+#   docker compose up -d     uruchamia Postgresa
+#   docker compose down      zatrzymuje (dane zostają)
+#   docker compose down -v   zatrzymuje i kasuje dane
+services:
+  db:
+    image: postgres:16
+    container_name: korkigo-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: korkigo
+      POSTGRES_PASSWORD: korkigo
+      POSTGRES_DB: korkigo
+    ports:
+      - "5432:5432"
+    volumes:
+      - korkigo-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U korkigo -d korkigo"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  korkigo-db-data:

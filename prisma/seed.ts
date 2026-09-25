@@ -187,6 +187,13 @@ async function seedDemo() {
 
 /** Rachunki i wpłaty liczone przez tę samą logikę, której używa aplikacja. */
 async function seedBilling(admin: AdminActor) {
+  // Seed ma być bezpieczny do powtórzenia — drugi przebieg nie dokłada
+  // kolejnych rachunków do tych samych lekcji.
+  if ((await prisma.invoice.count()) > 0) {
+    console.log("• Rachunki demo już istnieją — pomijam.");
+    return;
+  }
+
   await updateBillingSettings(admin, {
     sellerName: "Mateusz Kowalczyk",
     sellerAddress: "ul. Przykładowa 12/3, 00-001 Warszawa",
@@ -303,6 +310,11 @@ async function seedNdg(admin: AdminActor) {
 
 /** Dwie wiadomości demo: zbiorcza i pojedyncza — widać czerwoną kropkę. */
 async function seedMessages(admin: AdminActor) {
+  if ((await prisma.message.count()) > 0) {
+    console.log("• Wiadomości demo już istnieją — pomijam.");
+    return;
+  }
+
   const teachers = await prisma.teacherProfile.findMany({
     select: { id: true, firstName: true },
     orderBy: { firstName: "asc" },

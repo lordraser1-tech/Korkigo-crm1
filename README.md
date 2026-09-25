@@ -20,21 +20,27 @@ Schemat bazy: [`prisma/schema.prisma`](./prisma/schema.prisma).
 
 ## Szybki start
 
+> Uruchamiasz to pierwszy raz na swoim komputerze i chcesz instrukcję krok po
+> kroku (z Dockerem, kontami testowymi i rozwiązaniami typowych błędów)?
+> Zobacz [`URUCHOMIENIE.md`](./URUCHOMIENIE.md).
+
 ```bash
 npm install
+docker compose up -d          # Postgres do testów (albo własny — patrz niżej)
 cp .env.example .env          # uzupełnij DATABASE_URL i AUTH_SECRET
-npx prisma migrate dev        # utworzenie schematu
-npm run db:seed               # konto administratora z .env
+npm run setup                 # migracje + dane demonstracyjne
 npm run dev                   # http://localhost:3000
 ```
 
-Dane demonstracyjne (2 nauczycieli, 4 uczniów, lekcje cykliczne wstecz i do przodu):
+`npm run setup` zakłada schemat i wgrywa dane demo: 2 nauczycieli, 4 uczniów,
+lekcje wstecz i do przodu, rachunki, wpłaty, limit NDG i wiadomości.
 
-```bash
-SEED_DEMO=true npm run db:seed
-# logowanie: admin@korkigo.pl / (SEED_ADMIN_PASSWORD)
-#            anna.kowalska@korkigo.pl / nauczyciel123
 ```
+logowanie: admin@korkigo.pl / (SEED_ADMIN_PASSWORD z .env)
+           anna.kowalska@korkigo.pl / nauczyciel123
+```
+
+Samo konto administratora, bez danych demo: `npm run db:seed`.
 
 `AUTH_SECRET` musi mieć min. 32 znaki — wygeneruj przez `openssl rand -base64 32`.
 
@@ -296,7 +302,10 @@ konwersji czasu).
 | `npm run lint` / `npm run typecheck` | ESLint / TypeScript |
 | `npm test` | Vitest |
 | `npm run db:migrate` | `prisma migrate dev` |
-| `npm run db:seed` | konto admina (+ `SEED_DEMO=true` dane demo) |
+| `npm run setup` | migracje + dane demonstracyjne (pierwsze uruchomienie) |
+| `npm run db:seed` | samo konto admina |
+| `npm run db:seed:demo` | dane demonstracyjne |
+| `npm run db:reset` | czyści bazę i wgrywa świeże demo |
 | `npm run db:studio` | Prisma Studio |
 
 ## Wdrożenie
