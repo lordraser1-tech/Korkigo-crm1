@@ -267,6 +267,12 @@ Nieobecność bez odwołania to zawsze pełna cena. Nauczycielowi należy się
 wypłata za nieobecność (czekał), ale nie za odwołanie — nawet gdy uczeń
 zapłacił karę.
 
+Odwołanie przechodzi **zawsze** przez `cancelLesson()` — `updateLesson()`
+odrzuca status `CANCELLED`, więc ani REST, ani Server Action, ani skrypt nie
+zapisze odwołania z pominięciem naliczenia. Nauczyciel nie dostaje kwot
+odwołania (przy progu 100% byłyby dokładnie ceną ucznia) — widzi status
+i moment zgłoszenia.
+
 Liczy się moment **zgłoszenia**, nie moment kliknięcia w systemie: formularz
 odwołania ma pole „Kiedy uczeń zgłosił odwołanie” (domyślnie teraz) i to od
 niego zależy próg. Kwotę wyliczoną z regulaminu zapisujemy obok faktycznej
@@ -297,6 +303,10 @@ nierozliczonych.
   i cofanie wypłaty w karcie nauczyciela,
 - **nauczyciel**: w „Moich wypłatach” widzi kwotę oczekującą i własną historię —
   bez informacji, kto wypłatę oznaczył, i bez cudzych rozliczeń.
+
+Lekcja rozliczona z nauczycielem jest **zamrożona** dokładnie tak jak lekcja
+na rachunku: nie da się jej usunąć, przestawić ani odwołać, dopóki admin nie
+cofnie wypłaty. Bez tego wypłata zostawałaby z kwotą bez pokrycia w lekcjach.
 
 Kwota wypłaty jest edytowalna (wypłata częściowa), ale lekcje przypinamy
 zawsze wszystkie nierozliczone — inaczej nie dałoby się potem powiedzieć, co

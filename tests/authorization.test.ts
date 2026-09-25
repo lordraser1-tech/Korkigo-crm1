@@ -4,7 +4,7 @@
  * serwisowej — tej samej, z której korzystają API i panele.
  */
 import { afterAll, beforeEach, expect, it } from "vitest";
-import { ForbiddenError, NotFoundError } from "@/lib/errors";
+import { AppError, ForbiddenError, NotFoundError } from "@/lib/errors";
 import {
   createStudent as createStudentService,
   getStudent,
@@ -28,6 +28,7 @@ import {
   getAdminFinanceSummary,
   getTeacherEarnings,
 } from "@/lib/services/finance";
+import { createLessonInvoice } from "@/lib/services/billing";
 import {
   createAdmin,
   createLesson,
@@ -245,6 +246,36 @@ describeDb("uprawnienia ról", () => {
     const own = await listAvailability(anna);
     expect(own).toHaveLength(1);
     expect(own[0].teacherId).toBe(anna.teacherProfileId);
+  });
+
+  it("równoległe wystawianie rachunków nie wywala się na ustawieniach", async () => {
+    // `resolveDates` robił `upsert` na singletonie ustawień — dwa równoległe
+    // wystawienia zderzały się na kluczu i leciał surowy błąd Prismy (500).
+    const ids: string[] = [];
+    for (let i = 0; i < 3; i += 1) {
+      const id = await createLesson({
+        studentId: annaStudentId,
+        teacherId: anna.teacherProfileId,
+        scheduledAt: new Date(`2026-09-0${i + 1}T10:00:00Z`),
+      });
+      await setLessonStatus(admin, id, "COMPLETED");
+      ids.push(id);
+    }
+
+    const results = await Promise.allSettled(
+      ids.map((lessonId) =>
+        createLessonInvoice(admin, { lessonId, issuedAt: "2026-09-15" })
+      )
+    );
+    for (const result of results) {
+      if (result.status === "rejected") {
+        expect(result.reason).toBeInstanceOf(AppError);
+      }
+    }
+    const numbers = results
+      .filter((r) => r.status === "fulfilled")
+      .map((r) => (r as PromiseFulfilledResult<{ number: string }>).value.number);
+    expect(new Set(numbers).size).toBe(numbers.length);
   });
 
   // ---------- LEKCJE ----------

@@ -156,6 +156,9 @@ Niezmienniki, których nie wolno naruszyć przy zmianach:
   `lessons.updateLesson` i `deleteLesson`),
 - rachunków nie usuwamy — `cancelInvoice()` zmienia status i zwalnia lekcje,
 - dane wystawcy trafiają na rachunek jako snapshot przy wystawieniu,
+- odczyt ustawień (`loadBillingSettings`) **nie zakłada rekordu** — powstaje on
+  tylko przy zapisie przez admina. Wcześniej `upsert` na ścieżce odczytu
+  zderzał się przy dwóch równoległych rachunkach i dawał 500,
 - ile uczeń płaci za lekcję liczy `lessonChargeAmount()` z `policy.ts`, nie
   sama cena — odwołanie w terminie kosztuje zero, a odwołanie na ostatnią
   chwilę wchodzi do salda jak lekcja zrealizowana,
@@ -206,6 +209,12 @@ Testy: `tests/availability.test.ts`.
 
 - **żaden próg ani procent nie stoi poza `policy.ts`** — ani w serwisach,
   ani w komponentach; UI też czyta stamtąd opis progów,
+- odwołanie zapisuje **wyłącznie** `cancelLesson()`. `updateLesson()` odrzuca
+  status `CANCELLED` — bez tego każde wejście ustawiające status wprost
+  (REST, akcja, skrypt) omijało regulamin i lekcja wychodziła za darmo,
+- **nauczyciel nie dostaje kwot odwołania** (`mapLesson` zwraca mu `null`):
+  przy progu 100% naliczenie JEST ceną ucznia, więc byłaby to furtka do
+  `StudentRate`. Status i moment zgłoszenia widzi normalnie,
 - liczy się moment **zgłoszenia** odwołania przez ucznia (`cancelledReportedAt`),
   nie moment kliknięcia w systemie — formularz ma osobne pole na tę datę,
 - kwota z regulaminu zostaje obok faktycznej (`cancellationAutoAmount`
@@ -227,6 +236,10 @@ w karcie nauczyciela. Niezmienniki:
 - lekcja trafia na **jedną** wypłatę — `Lesson.teacherPayoutId` przypisujemy
   w transakcji razem z utworzeniem `Payout`, więc kolejne wyliczenie jej nie
   policzy; cofnięcie wypłaty zwraca lekcje do nierozliczonych,
+- lekcja rozliczona jest **zamrożona** tak samo jak ta na rachunku
+  (`assertNotPaidOut` w `updateLesson`, `cancelLesson` i `deleteLesson`) —
+  inaczej dałoby się skasować lekcję, za którą pieniądze już wyszły, a wypłata
+  zostawała z kwotą bez pokrycia. Wyjście awaryjne: admin cofa wypłatę,
 - kwota jest edytowalna (wypłata częściowa), ale lekcje przypinamy zawsze
   wszystkie nierozliczone,
 - nauczyciel widzi własną kwotę i historię, **bez** tego kto wypłatę oznaczył

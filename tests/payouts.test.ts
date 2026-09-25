@@ -14,7 +14,13 @@ import {
   listPayoutsDue,
   recordPayout,
 } from "@/lib/services/payouts";
-import { cancelLesson, setLessonStatus } from "@/lib/services/lessons";
+import {
+  cancelLesson,
+  deleteLesson,
+  getLesson,
+  setLessonStatus,
+  updateLesson,
+} from "@/lib/services/lessons";
 import {
   createAdmin,
   createLesson,
@@ -162,6 +168,50 @@ describeDb("wypłaty nauczycieli", () => {
     await expect(
       recordPayout(admin, { teacherId: anna.teacherProfileId, amount: "60" })
     ).rejects.toBeInstanceOf(ValidationError);
+  });
+
+  // ---------- ZAMROŻENIE LEKCJI ROZLICZONEJ ----------
+
+  it("lekcji rozliczonej nie da się usunąć", async () => {
+    const id = await completed(WEEK_1);
+    await recordPayout(admin, { teacherId: anna.teacherProfileId, amount: "60" });
+
+    await expect(deleteLesson(admin, id)).rejects.toBeInstanceOf(ValidationError);
+
+    // Wypłata nadal ma pokrycie w lekcjach — bez tego zostałaby kwota znikąd.
+    const [payout] = await listPayouts(admin, anna.teacherProfileId);
+    expect(payout.lessonCount).toBe(1);
+  });
+
+  it("lekcji rozliczonej nie da się przestawić ani odwołać", async () => {
+    const id = await completed(WEEK_1);
+    await recordPayout(admin, { teacherId: anna.teacherProfileId, amount: "60" });
+
+    await expect(
+      updateLesson(admin, id, { scheduledAt: "2026-12-24T16:00" })
+    ).rejects.toBeInstanceOf(ValidationError);
+    await expect(
+      setLessonStatus(admin, id, "SCHEDULED")
+    ).rejects.toBeInstanceOf(ValidationError);
+    await expect(cancelLesson(admin, id, {})).rejects.toBeInstanceOf(
+      ValidationError
+    );
+
+    const lekcja = await getLesson(admin, id);
+    expect(lekcja.status).toBe("COMPLETED");
+    expect(lekcja.scheduledAt).toBe(WEEK_1.toISOString());
+  });
+
+  it("po cofnięciu wypłaty lekcja znów jest edytowalna", async () => {
+    const id = await completed(WEEK_1);
+    const payout = await recordPayout(admin, {
+      teacherId: anna.teacherProfileId,
+      amount: "60",
+    });
+    await deletePayout(admin, payout.id);
+
+    const moved = await updateLesson(admin, id, { scheduledAt: "2026-09-22T16:00" });
+    expect(moved.scheduledAt).toBe(new Date("2026-09-22T14:00:00Z").toISOString());
   });
 
   // ---------- GRANICE RÓL ----------

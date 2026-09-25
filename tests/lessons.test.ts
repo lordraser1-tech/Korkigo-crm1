@@ -9,11 +9,13 @@ import { ForbiddenError, ValidationError } from "@/lib/errors";
 import {
   cancelLesson,
   createLessons,
+  getLesson,
   listLessons,
   previewCancellation,
   setLessonStatus,
   updateLesson,
 } from "@/lib/services/lessons";
+import { recordPayout } from "@/lib/services/payouts";
 import { createLessonInvoice } from "@/lib/services/billing";
 import {
   createAdmin,
@@ -61,15 +63,32 @@ describeDb("odwoływanie lekcji", () => {
       reportedAt: reportedHoursBefore(48),
     });
     expect(lesson.status).toBe("CANCELLED");
-    expect(lesson.cancellationAmount).toBe(0);
-    expect(lesson.cancellationAutoAmount).toBe(0);
+    // Kwotę czyta admin — nauczyciel nie dostaje jej w ogóle (patrz niżej).
+    const forAdmin = await getLesson(admin, lessonId);
+    expect(forAdmin.cancellationAmount).toBe(0);
+    expect(forAdmin.cancellationAutoAmount).toBe(0);
   });
 
   it("odwołanie na ostatnią chwilę kosztuje pełną cenę ucznia", async () => {
-    const lesson = await cancelLesson(anna, lessonId, {
-      reportedAt: reportedHoursBefore(3),
+    await cancelLesson(anna, lessonId, { reportedAt: reportedHoursBefore(3) });
+    expect((await getLesson(admin, lessonId)).cancellationAmount).toBe(100);
+  });
+
+  it("nauczyciel nie pozna z kwoty odwołania ceny ucznia", async () => {
+    // Przy progu 100% naliczenie JEST ceną ucznia — gdyby wyciekło tędy,
+    // cała zasada „nauczyciel nie widzi cen” byłaby do obejścia odwołaniem.
+    const forTeacher = await cancelLesson(anna, lessonId, {
+      reportedAt: reportedHoursBefore(1),
     });
-    expect(lesson.cancellationAmount).toBe(100);
+    expect(forTeacher.cancellationAmount).toBeNull();
+    expect(forTeacher.cancellationAutoAmount).toBeNull();
+    // ...ale sam fakt odwołania i moment zgłoszenia już widzi.
+    expect(forTeacher.status).toBe("CANCELLED");
+    expect(forTeacher.cancelledReportedAt).not.toBeNull();
+
+    const fromList = (await listLessons(anna, {})).find((l) => l.id === lessonId)!;
+    expect(fromList.cancellationAmount).toBeNull();
+    expect((await getLesson(admin, lessonId)).cancellationAmount).toBe(100);
   });
 
   it("liczy się moment zgłoszenia, nie moment wpisania do systemu", async () => {
@@ -80,18 +99,18 @@ describeDb("odwoływanie lekcji", () => {
       { reportedAt: reportedHoursBefore(72) },
       new Date(LESSON_AT.getTime() - 60 * 60 * 1000)
     );
-    expect(lesson.cancellationAmount).toBe(0);
     expect(lesson.cancelledReportedAt).not.toBeNull();
+    expect((await getLesson(admin, lessonId)).cancellationAmount).toBe(0);
   });
 
   it("bez podanego zgłoszenia liczymy „teraz”", async () => {
-    const lesson = await cancelLesson(
+    await cancelLesson(
       anna,
       lessonId,
       {},
       new Date(LESSON_AT.getTime() - 60 * 60 * 1000)
     );
-    expect(lesson.cancellationAmount).toBe(100);
+    expect((await getLesson(admin, lessonId)).cancellationAmount).toBe(100);
   });
 
   it("podgląd naliczenia zgadza się z zapisem", async () => {
@@ -149,7 +168,31 @@ describeDb("odwoływanie lekcji", () => {
   it("przycisk „Odwołana” przechodzi tą samą ścieżką co formularz", async () => {
     const lesson = await setLessonStatus(anna, lessonId, "CANCELLED");
     expect(lesson.status).toBe("CANCELLED");
-    expect(lesson.cancellationAmount).not.toBeNull();
+    // Naliczenie powstało, choć nauczyciel go nie widzi.
+    expect((await getLesson(admin, lessonId)).cancellationAmount).not.toBeNull();
+    expect((await getLesson(admin, lessonId)).cancelledReportedAt).not.toBeNull();
+  });
+
+  it("odwołania NIE da się zapisać na skróty przez updateLesson", async () => {
+    // To była realna furtka: REST-owy PATCH ustawiał status wprost i lekcja
+    // wychodziła za darmo, bez naliczenia i bez daty zgłoszenia.
+    await expect(
+      updateLesson(admin, lessonId, { status: "CANCELLED" })
+    ).rejects.toBeInstanceOf(ValidationError);
+
+    const nietknieta = await getLesson(admin, lessonId);
+    expect(nietknieta.status).toBe("SCHEDULED");
+    expect(nietknieta.cancelledReportedAt).toBeNull();
+  });
+
+  it("odkliknięcie odwołania czyści naliczenie", async () => {
+    await cancelLesson(admin, lessonId, { reportedAt: reportedHoursBefore(1) });
+    expect((await getLesson(admin, lessonId)).cancellationAmount).toBe(100);
+
+    await setLessonStatus(admin, lessonId, "COMPLETED");
+    const po = await getLesson(admin, lessonId);
+    expect(po.cancellationAmount).toBeNull();
+    expect(po.cancelledReportedAt).toBeNull();
   });
 
   it("lekcji z nieanulowanego rachunku nie da się odwołać", async () => {

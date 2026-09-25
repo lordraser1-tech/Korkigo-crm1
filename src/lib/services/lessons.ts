@@ -4,7 +4,11 @@ import { z } from "zod";
 import type { Actor } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { ForbiddenError, NotFoundError, ValidationError } from "@/lib/errors";
-import { addWeeksToWallClock, wallClockToUtc } from "@/lib/datetime";
+import {
+  addWeeksToWallClock,
+  toWallClockInput,
+  wallClockToUtc,
+} from "@/lib/datetime";
 import { toAmount } from "@/lib/money";
 import {
   lessonCreateSchema,
@@ -73,7 +77,14 @@ const LESSON_SELECT = {
 
 type LessonRow = Prisma.LessonGetPayload<{ select: typeof LESSON_SELECT }>;
 
-function mapLesson(row: LessonRow): LessonDto {
+/**
+ * Kwoty odwołania są pochodną ceny ucznia (przy progu 100% to dokładnie
+ * `StudentRate`), więc nauczyciel dostaje je jako `null` — tak samo jak nie
+ * dostaje `rateCount` czy `billingMode`. Sam status i moment zgłoszenia
+ * zostają, bo nauczyciel musi wiedzieć, że lekcja przepadła.
+ */
+function mapLesson(row: LessonRow, actor: Actor): LessonDto {
+  const showAmounts = actor.role === "ADMIN";
   return {
     id: row.id,
     studentId: row.studentId,
@@ -93,9 +104,11 @@ function mapLesson(row: LessonRow): LessonDto {
     subjectLabel: `${row.subjectLevel.subject.name} · ${row.subjectLevel.name}`,
     cancelledReportedAt: row.cancelledReportedAt?.toISOString() ?? null,
     cancellationAmount:
-      row.cancellationAmount === null ? null : toAmount(row.cancellationAmount),
+      !showAmounts || row.cancellationAmount === null
+        ? null
+        : toAmount(row.cancellationAmount),
     cancellationAutoAmount:
-      row.cancellationAutoAmount === null
+      !showAmounts || row.cancellationAutoAmount === null
         ? null
         : toAmount(row.cancellationAutoAmount),
     cancellationNote: row.cancellationNote,
@@ -140,7 +153,7 @@ export async function listLessons(
     select: LESSON_SELECT,
     orderBy: { scheduledAt: "asc" },
   });
-  return rows.map(mapLesson);
+  return rows.map((row) => mapLesson(row, actor));
 }
 
 export async function getLesson(actor: Actor, id: string): Promise<LessonDto> {
@@ -149,7 +162,7 @@ export async function getLesson(actor: Actor, id: string): Promise<LessonDto> {
     select: LESSON_SELECT,
   });
   if (!row) throw new NotFoundError("Nie znaleziono lekcji.");
-  return mapLesson(row);
+  return mapLesson(row, actor);
 }
 
 export async function upcomingLessons(
@@ -167,7 +180,7 @@ export async function upcomingLessons(
     orderBy: { scheduledAt: "asc" },
     take: limit,
   });
-  return rows.map(mapLesson);
+  return rows.map((row) => mapLesson(row, actor));
 }
 
 export async function countLessonsByStatus(
@@ -269,13 +282,37 @@ export async function createLessons(
     select: LESSON_SELECT,
     orderBy: { scheduledAt: "asc" },
   });
-  return created.map(mapLesson);
+  return created.map((row) => mapLesson(row, actor));
 }
 
 /**
  * Lekcja ujęta na wystawionym rachunku jest zamrożona — inaczej zmiana statusu
  * albo terminu rozjechałaby się z dokumentem, który uczeń już dostał.
  */
+/**
+ * Lekcja rozliczona z nauczycielem jest zamrożona tak samo jak ta na
+ * rachunku: inaczej dałoby się usunąć albo przestawić lekcję, za którą
+ * pieniądze już wyszły, i wypłata przestałaby się zgadzać z czymkolwiek.
+ * Wyjście awaryjne jest to samo co przy rachunku — admin cofa wypłatę.
+ */
+async function assertNotPaidOut(lessonId: string): Promise<void> {
+  const lesson = await prisma.lesson.findUnique({
+    where: { id: lessonId },
+    select: {
+      teacherPayoutId: true,
+      teacherPayout: { select: { paidAt: true } },
+    },
+  });
+  if (lesson?.teacherPayoutId) {
+    const when = lesson.teacherPayout
+      ? ` z ${toWallClockInput(lesson.teacherPayout.paidAt).slice(0, 10)}`
+      : "";
+    throw new ValidationError(
+      `Lekcja jest rozliczona w wypłacie${when} — najpierw cofnij tę wypłatę.`
+    );
+  }
+}
+
 async function assertNotInvoiced(lessonId: string): Promise<void> {
   const item = await prisma.invoiceItem.findUnique({
     where: { lessonId },
@@ -308,8 +345,19 @@ export async function updateLesson(
     },
   });
   if (!existing) throw new NotFoundError("Nie znaleziono lekcji.");
-  await assertNotInvoiced(id);
 
+  // Odwołanie MUSI iść przez `cancelLesson()`, bo tylko tam naliczamy opłatę
+  // wg regulaminu i zapisujemy moment zgłoszenia. Gdyby dało się ustawić ten
+  // status tędy, każdy wariant wejścia (REST, akcja, skrypt) byłby furtką
+  // omijającą regulamin — a lekcja wyszłaby za darmo.
+  if (data.status === "CANCELLED") {
+    throw new ValidationError(
+      "Odwołanie lekcji zapisuj przez `cancelLesson()` — nalicza opłatę wg regulaminu."
+    );
+  }
+
+  await assertNotInvoiced(id);
+  await assertNotPaidOut(id);
 
   const update: Prisma.LessonUpdateInput = {};
   if (data.scheduledAt !== undefined) {
@@ -319,13 +367,13 @@ export async function updateLesson(
     update.durationMinutes = data.durationMinutes;
   }
   if (data.status !== undefined) {
+    // Skoro odwołanie ma tu zakaz wstępu, każdy status ustawiany tędy czyści
+    // naliczenie — lekcja „odkliknięta” z odwołania nie może go ciągnąć dalej.
     update.status = data.status;
-    if (data.status !== "CANCELLED") {
-      update.cancelledReportedAt = null;
-      update.cancellationAmount = null;
-      update.cancellationAutoAmount = null;
-      update.cancellationNote = null;
-    }
+    update.cancelledReportedAt = null;
+    update.cancellationAmount = null;
+    update.cancellationAutoAmount = null;
+    update.cancellationNote = null;
   }
 
   // „Tylko ta” odczepia lekcję od serii, żeby kolejne zmiany zbiorcze jej
@@ -383,7 +431,7 @@ export async function updateLesson(
     }
   }
 
-  return mapLesson(updated);
+  return mapLesson(updated, actor);
 }
 
 /**
@@ -412,6 +460,7 @@ export async function cancelLesson(
   });
   if (!lesson) throw new NotFoundError("Nie znaleziono lekcji.");
   await assertNotInvoiced(id);
+  await assertNotPaidOut(id);
 
   const reportedAt = data.reportedAt ? wallClockToUtc(data.reportedAt) : now;
 
@@ -456,7 +505,7 @@ export async function cancelLesson(
     },
     select: LESSON_SELECT,
   });
-  return mapLesson(updated);
+  return mapLesson(updated, actor);
 }
 
 /** Podgląd naliczenia przed zapisem — do formularza odwołania. */
@@ -516,7 +565,7 @@ export async function setLessonTopic(
     data: { topic },
     select: LESSON_SELECT,
   });
-  return mapLesson(updated);
+  return mapLesson(updated, actor);
 }
 
 export async function setLessonStatus(
@@ -537,6 +586,7 @@ export async function deleteLesson(actor: Actor, id: string): Promise<void> {
   const visible = await prisma.lesson.findFirst({ where, select: { id: true } });
   if (!visible) throw new NotFoundError("Nie znaleziono lekcji.");
   await assertNotInvoiced(id);
+  await assertNotPaidOut(id);
 
   const result = await prisma.lesson.deleteMany({ where });
   if (result.count === 0) throw new NotFoundError("Nie znaleziono lekcji.");

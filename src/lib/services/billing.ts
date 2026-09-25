@@ -35,6 +35,31 @@ import {
 
 const ADMIN_ONLY = "Rozliczenia są dostępne tylko dla administratora.";
 
+/** Domyślne ustawienia wystawcy — muszą odpowiadać `schema.prisma`. */
+const DEFAULT_BILLING_SETTINGS: BillingSettingsDto = {
+  sellerName: "",
+  sellerAddress: "",
+  sellerContact: "",
+  sellerTaxNote:
+    "Sprzedaż nieewidencjonowana — działalność nierejestrowana.",
+  bankAccount: "",
+  paymentTermDays: 7,
+  invoiceFooter: "",
+};
+
+/**
+ * Odczyt ustawień NIE zakłada rekordu. Wcześniej każda ścieżka wystawiania
+ * robiła tu `upsert`, przez co dwa równoległe rachunki zderzały się na kluczu
+ * i wychodziły jako surowy błąd Prismy (500 zamiast komunikatu). Rekord
+ * powstaje wyłącznie wtedy, gdy admin zapisze ustawienia.
+ */
+async function loadBillingSettings(): Promise<BillingSettingsDto> {
+  const row = await prisma.billingSettings.findUnique({
+    where: { id: "singleton" },
+  });
+  return row ?? DEFAULT_BILLING_SETTINGS;
+}
+
 function assertAdmin(actor: Actor): void {
   if (actor.role !== "ADMIN") throw new ForbiddenError(ADMIN_ONLY);
 }
@@ -68,11 +93,7 @@ export async function getBillingSettings(
   actor: Actor
 ): Promise<BillingSettingsDto> {
   assertAdmin(actor);
-  const row = await prisma.billingSettings.upsert({
-    where: { id: "singleton" },
-    update: {},
-    create: { id: "singleton" },
-  });
+  const row = await loadBillingSettings();
   return {
     sellerName: row.sellerName,
     sellerAddress: row.sellerAddress,
@@ -342,11 +363,7 @@ type InvoiceDraft = {
 
 async function createInvoice(draft: InvoiceDraft): Promise<InvoiceDto> {
   const total = round(draft.items.reduce((sum, item) => sum + item.amount, 0));
-  const settings = await prisma.billingSettings.upsert({
-    where: { id: "singleton" },
-    update: {},
-    create: { id: "singleton" },
-  });
+  const settings = await loadBillingSettings();
   const student = await prisma.student.findUniqueOrThrow({
     where: { id: draft.studentId },
     select: {
@@ -429,11 +446,10 @@ async function resolveDates(
   issuedAtInput: string | undefined,
   dueDays: number | undefined
 ): Promise<{ issuedAt: Date; dueAt: Date }> {
-  const settings = await prisma.billingSettings.upsert({
-    where: { id: "singleton" },
-    update: {},
-    create: { id: "singleton" },
-  });
+  // Sam odczyt terminu nie może zakładać rekordu ustawień: `upsert` z dwóch
+  // równoległych wystawień zderzał się na kluczu i wychodził jako surowy błąd
+  // Prismy (500 zamiast komunikatu). Brak rekordu = wartości domyślne.
+  const settings = await loadBillingSettings();
   const issuedAt = issuedAtInput
     ? wallClockToUtc(`${issuedAtInput}T12:00`)
     : new Date();
