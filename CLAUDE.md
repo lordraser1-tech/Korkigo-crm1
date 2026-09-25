@@ -24,13 +24,13 @@ uczniów i nauczycieli, wszystkie lekcje, płatności.
   zrealizowanych lekcji × jego stawka)
 
 **Nauczyciel NIE MOŻE zobaczyć:**
-- stawki ucznia (`Student.ratePerLesson`)
+- cen ucznia (`StudentRate` — per przedmiot/poziom)
 - stawek ani danych innych nauczycieli
 - lekcji/uczniów przypisanych do innych nauczycieli
 
 To musi być wymuszone **na poziomie API/serwera**, nie tylko ukryte w UI —
-endpointy dla roli `TEACHER` nigdy nie powinny zwracać pola `ratePerLesson`
-z modelu `Student`, ani rekordów innego `teacherId`. Stawki ustala wyłącznie
+endpointy dla roli `TEACHER` nigdy nie powinny zwracać cen ucznia
+(`StudentRate`) ani rekordów innego `teacherId`. Stawki ustala wyłącznie
 admin, ręcznie, w panelu admina.
 
 ## Stan: faza 1 gotowa, faza 2 rozliczeniowa gotowa, faza 3 w części limitu NDG gotowa
@@ -80,7 +80,7 @@ w warstwie serwisowej**, nie w komponentach.
   `requireActor()` dla API, `requirePage()` dla stron.
 - `src/lib/services/{students,teachers,lessons,finance}.ts` — cała logika
   i kontrola dostępu. Każda funkcja przyjmuje `Actor` i sama zawęża zapytanie.
-  Stawka ucznia dla roli `TEACHER` nie jest pobierana z bazy (`selectFor`),
+  Ceny ucznia dla roli `TEACHER` nie są pobierane z bazy (`selectFor`),
   a cudzy rekord daje `NotFoundError` (404), nie 403.
 - `src/app/api/**` i `src/app/actions/**` — cienkie warstwy wejścia; obie wołają
   te same serwisy, więc nie da się obejść reguł przez API.
@@ -91,12 +91,50 @@ w warstwie serwisowej**, nie w komponentach.
 
 Ścieżki paneli: `/admin/*` (admin) i `/nauczyciel/*` (nauczyciel), logowanie `/login`.
 
+## Przedmioty, poziomy i stawki
+
+`src/lib/services/subjects.ts`, panel `/admin/przedmioty`. Model zastąpił
+pojedyncze `TeacherProfile.ratePerLesson` i `Student.ratePerLesson`:
+
+- **Subject** → **SubjectLevel** (dowolna liczba poziomów per przedmiot),
+- **TeacherRate** = stawka nauczyciela per poziom, **StudentRate** = cena
+  ucznia per poziom (indywidualna, nie wspólna dla poziomu),
+- **przedmiot i poziom są cechą LEKCJI** (`Lesson.subjectLevelId`), nie ucznia —
+  jeden uczeń może brać kilka przedmiotów.
+
+Niezmienniki:
+
+- zapis lekcji bez stawki nauczyciela **i** ceny ucznia dla wybranej kombinacji
+  jest odrzucany (`resolveLessonRates`) — nie chcemy lekcji „za darmo”,
+- listę przedmiotów widzą obie role (nauczyciel potrzebuje jej do zapisu
+  lekcji), ale **ceny uczniów są wyłącznie dla admina**, a stawki nauczyciela
+  widzi on sam i admin,
+- zarobki i statystyki liczą stawkę osobno dla każdej lekcji — stawka bywa inna
+  dla różnych przedmiotów.
+
+Testy: `tests/subjects.test.ts`.
+
+## Speaking Club
+
+`src/lib/services/speaking-club.ts`. Jeden darmowy udział za każde
+`LESSONS_PER_SPEAKING_CLUB` (10) lekcji ZREALIZOWANYCH, liczonych **niezależnie
+od przedmiotu**. Odznacza admin (każdemu) i nauczyciel (swoim uczniom); zapis
+trzyma datę i kto odznaczył, a pomyłkę da się cofnąć. Widok nie zawiera kwot,
+więc jest bezpieczny dla obu ról. Testy: `tests/speaking-club.test.ts`.
+
 ## Rozliczenia (faza 2) — reguły
 
 Uczeń ma tryb rozliczeń `Student.billingMode`: `POSTPAID` (rachunek zbiorczy na
 koniec miesiąca), `PER_LESSON` (rachunek po każdej lekcji) albo `PREPAID`
 (pakiet z góry, lekcje zdejmują jednostki). Cała logika siedzi w
 `src/lib/services/billing.ts` i jest **dostępna wyłącznie dla ADMIN-a**.
+
+Status płatności lekcji liczy się **na żywo** z wpłat i lekcji
+(`buildStudentBillingState`), a nie dopiero po wystawieniu rachunku:
+PREPAID i PER_LESSON — wpłaty pokrywają lekcje chronologicznie; POSTPAID —
+decyduje rachunek za dany miesiąc. Saldo ucznia to `wpłaty − wartość lekcji
+zrealizowanych`, więc lekcja ponad opłacony pakiet od razu daje minus
+(w fazie 1 saldo pokazywało wtedy zero — to był błąd).
 
 Jedyny wyjątek to `getPaymentFlags()` — zwraca nauczycielowi sam enum
 `OK` / `OVERDUE` dla **jego** uczniów, bez kwot, dat i numerów rachunków.

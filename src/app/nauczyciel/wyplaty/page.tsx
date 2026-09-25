@@ -24,7 +24,11 @@ export default async function TeacherEarningsPage({
       />
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard label="Twoja stawka" value={formatPLN(earnings.ratePerLesson)} hint="za lekcję" />
+        <StatCard
+          label="Przedmioty"
+          value={String(earnings.bySubject.length)}
+          hint="rozliczone w tym miesiącu"
+        />
         <StatCard label="Lekcje zrealizowane" value={String(earnings.completedLessons)} />
         <StatCard
           label="Pozostałe lekcje"
@@ -33,6 +37,40 @@ export default async function TeacherEarningsPage({
         />
         <StatCard label="Do wypłaty" value={formatPLN(earnings.total)} hint="za wybrany miesiąc" />
       </div>
+
+      {earnings.bySubject.length > 0 ? (
+        <section className="mt-8">
+          <h2 className="mb-3 text-base font-semibold text-slate-900">
+            Rozbicie na przedmioty
+          </h2>
+          <div className="card overflow-x-auto">
+            <table className="w-full min-w-[420px] text-sm">
+              <thead className="table-head">
+                <tr>
+                  <th className="px-4 py-2.5">Przedmiot i poziom</th>
+                  <th className="px-4 py-2.5">Lekcje</th>
+                  <th className="px-4 py-2.5">Kwota</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {earnings.bySubject.map((row) => (
+                  <tr key={row.subjectLevelId}>
+                    <td className="px-4 py-2.5 font-medium text-slate-800">
+                      {row.label}
+                    </td>
+                    <td className="px-4 py-2.5 text-slate-600">
+                      {row.completedLessons}
+                    </td>
+                    <td className="px-4 py-2.5 font-medium text-slate-900">
+                      {formatPLN(row.amount)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      ) : null}
 
       <section className="mt-8">
         <h2 className="mb-3 text-base font-semibold text-slate-900">

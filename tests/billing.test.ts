@@ -10,6 +10,7 @@ import { ForbiddenError, NotFoundError, ValidationError } from "@/lib/errors";
 import {
   cancelInvoice,
   createLessonInvoice,
+  getLessonPaymentStates,
   createMonthlyInvoice,
   createPackageInvoice,
   deletePayment,
@@ -32,6 +33,7 @@ import {
   createStudent,
   createTeacher,
   describeDb,
+  getDefaultLevelId,
   prisma,
   resetDatabase,
 } from "./helpers/db";
@@ -129,7 +131,7 @@ describeDb("rachunki i płatności", () => {
         (row) => row.id === droższyId
       )!;
       expect(student.paymentFlag).toBe("OVERDUE");
-      expect(student.ratePerLesson).toBeNull();
+      expect(student.rateCount).toBeNull();
       expect(student.billingMode).toBeNull();
 
       const payload = JSON.stringify(student);
@@ -452,6 +454,74 @@ describeDb("rachunki i płatności", () => {
     });
   });
 
+  // ---------- STATUS PŁATNOŚCI NA ŻYWO ----------
+
+  describe("status lekcji bez rachunku", () => {
+    it("tryb miesięczny: lekcje czekają na opłacenie rachunku za miesiąc", async () => {
+      const lessonId = await completedLesson("2026-01-12");
+
+      // Zanim powstanie rachunek — lekcja jest nieopłacona.
+      let states = await getLessonPaymentStates(admin, [lessonId]);
+      expect(states.get(lessonId)?.state).toBe("UNPAID");
+
+      const invoice = await createMonthlyInvoice(admin, {
+        studentId,
+        month: "2026-01",
+        issuedAt: "2026-01-31",
+        dueDays: 7,
+      });
+      states = await getLessonPaymentStates(admin, [lessonId]);
+      expect(states.get(lessonId)?.state).toBe("OVERDUE"); // termin minął
+
+      await recordPayment(admin, {
+        studentId,
+        invoiceId: invoice.id,
+        amount: invoice.totalAmount.toFixed(2),
+      });
+      states = await getLessonPaymentStates(admin, [lessonId]);
+      expect(states.get(lessonId)?.state).toBe("PAID");
+    });
+
+    it("tryb „po każdej lekcji”: wpłata pokrywa lekcje po kolei", async () => {
+      const perLessonId = await createStudent(
+        anna.teacherProfileId,
+        100,
+        "Alesia",
+        "PER_LESSON"
+      );
+      const pierwsza = await completedLesson("2026-01-05", perLessonId);
+      const druga = await completedLesson("2026-01-12", perLessonId);
+
+      await recordPayment(admin, {
+        studentId: perLessonId,
+        amount: "100",
+        paidAt: "2026-01-06",
+      });
+
+      const states = await getLessonPaymentStates(admin, [pierwsza, druga]);
+      expect(states.get(pierwsza)?.state).toBe("PAID");
+      expect(states.get(druga)?.state).toBe("UNPAID");
+
+      const saldo = await getStudentBalance(admin, perLessonId);
+      expect(saldo.unpaidLessons).toBe(1);
+      expect(saldo.balance).toBe(-100);
+    });
+
+    it("lekcja odwołana nie jest naliczana", async () => {
+      const lessonId = await createLesson({
+        studentId,
+        teacherId: anna.teacherProfileId,
+        scheduledAt: new Date("2026-01-19T14:00:00Z"),
+        status: "CANCELLED",
+      });
+      const states = await getLessonPaymentStates(admin, [lessonId]);
+      expect(states.get(lessonId)?.state).toBe("NOT_CHARGED");
+
+      const saldo = await getStudentBalance(admin, studentId);
+      expect(saldo.charged).toBe(0);
+    });
+  });
+
   // ---------- SALDA I ZALEGŁOŚCI ----------
 
   describe("salda i zaległości", () => {
@@ -535,30 +605,52 @@ describeDb("rachunki i płatności", () => {
     it("pakiet liczy wartość i zdejmuje jednostki za zrealizowane lekcje", async () => {
       const invoice = await createPackageInvoice(admin, {
         studentId: prepaidId,
+        subjectLevelId: getDefaultLevelId(),
         quantity: 4,
         issuedAt: "2026-09-01",
       });
-      expect(invoice.totalAmount).toBe(400);
+      expect(invoice.totalAmount).toBe(400); // 4 × cena ucznia (100)
       expect(invoice.items[0].quantity).toBe(4);
 
+      await recordPayment(admin, {
+        studentId: prepaidId,
+        invoiceId: invoice.id,
+        amount: "400",
+      });
       await completedLesson("2026-09-02", prepaidId);
       await completedLesson("2026-09-09", prepaidId);
 
+      // Wpłacone 400, zużyte 200 — zostają środki na dwie lekcje.
       const saldo = await getStudentBalance(admin, prepaidId);
-      expect(saldo.prepaidRemaining).toBe(2);
+      expect(saldo.paid).toBe(400);
+      expect(saldo.charged).toBe(200);
+      expect(saldo.balance).toBe(200);
+      expect(saldo.unpaidLessons).toBe(0);
     });
 
-    it("przekroczony pakiet to zaległość — także we fladze nauczyciela", async () => {
-      await createPackageInvoice(admin, {
+    it("lekcja ponad opłacony pakiet zjada saldo i zapala flagę", async () => {
+      // Pakiet na 1 lekcję, opłacony — a lekcje dwie.
+      const invoice = await createPackageInvoice(admin, {
         studentId: prepaidId,
+        subjectLevelId: getDefaultLevelId(),
         quantity: 1,
         issuedAt: "2026-09-01",
+      });
+      await recordPayment(admin, {
+        studentId: prepaidId,
+        invoiceId: invoice.id,
+        amount: "100",
       });
       await completedLesson("2026-09-02", prepaidId);
       await completedLesson("2026-09-09", prepaidId);
 
       const saldo = await getStudentBalance(admin, prepaidId);
-      expect(saldo.prepaidRemaining).toBe(-1);
+      expect(saldo.paid).toBe(100);
+      expect(saldo.charged).toBe(200);
+      // To jest ten błąd z fazy 1: saldo pokazywało 0 mimo lekcji ponad pakiet.
+      expect(saldo.balance).toBe(-100);
+      expect(saldo.unpaidLessons).toBe(1);
+      expect(saldo.arrears).toBe(true);
 
       const flags = await getPaymentFlags(anna, [prepaidId]);
       expect(flags.get(prepaidId)).toBe("OVERDUE");
@@ -567,6 +659,7 @@ describeDb("rachunki i płatności", () => {
     it("cena pakietu może być inna niż stawka ucznia", async () => {
       const invoice = await createPackageInvoice(admin, {
         studentId: prepaidId,
+        subjectLevelId: getDefaultLevelId(),
         quantity: 10,
         unitPrice: "85",
         issuedAt: "2026-09-01",
@@ -576,7 +669,11 @@ describeDb("rachunki i płatności", () => {
 
     it("uczeń spoza bazy nie dostanie rachunku", async () => {
       await expect(
-        createPackageInvoice(admin, { studentId: "nie-istnieje", quantity: 2 })
+        createPackageInvoice(admin, {
+          studentId: "nie-istnieje",
+          subjectLevelId: getDefaultLevelId(),
+          quantity: 2,
+        })
       ).rejects.toBeInstanceOf(NotFoundError);
     });
   });

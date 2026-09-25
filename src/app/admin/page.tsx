@@ -28,13 +28,11 @@ export default async function AdminDashboard() {
       getNdgOverview(actor),
     ]);
 
-  const overdue = receivables.filter((row) => row.overdueAmount > 0);
-  const overdueTotal = overdue.reduce((sum, row) => sum + row.overdueAmount, 0);
+
 
   const activeStudents = students.filter((s) => s.status === "ACTIVE").length;
-  const missingRates = students.filter(
-    (s) => s.ratePerLesson === null || s.ratePerLesson === 0
-  );
+  const missingRates = students.filter((s) => (s.rateCount ?? 0) === 0);
+  const withArrears = receivables.filter((row) => row.arrears);
 
   return (
     <>
@@ -68,14 +66,17 @@ export default async function AdminDashboard() {
         />
       </div>
 
-      {overdue.length > 0 ? (
+
+
+      {withArrears.length > 0 ? (
         <div className="mt-6 rounded-xl border border-red-200 bg-red-50 p-4">
           <p className="text-sm font-medium text-red-900">
-            Zaległości: {formatPLN(overdueTotal)} u {overdue.length}{" "}
-            {overdue.length === 1 ? "ucznia" : "uczniów"}.
+            {withArrears.length === 1
+              ? "1 uczeń z zaległością."
+              : `${withArrears.length} uczniów z zaległością.`}
           </p>
           <p className="mt-1 text-xs text-red-800">
-            {overdue.slice(0, 5).map((row, index) => (
+            {withArrears.slice(0, 5).map((row, index) => (
               <span key={row.studentId}>
                 {index > 0 ? ", " : ""}
                 <Link
@@ -84,10 +85,10 @@ export default async function AdminDashboard() {
                 >
                   {row.studentName}
                 </Link>{" "}
-                ({formatPLN(row.overdueAmount)})
+                ({formatPLN(Math.abs(Math.min(row.balance, 0)))})
               </span>
             ))}
-            {overdue.length > 5 ? " …" : ""}
+            {withArrears.length > 5 ? " …" : ""}
             {" — "}
             <Link href="/admin/platnosci" className="font-medium underline">
               przejdź do płatności
@@ -100,12 +101,12 @@ export default async function AdminDashboard() {
         <div className="mt-6 rounded-xl border border-amber-200 bg-amber-50 p-4">
           <p className="text-sm font-medium text-amber-900">
             {missingRates.length === 1
-              ? "1 uczeń czeka na ustalenie stawki."
-              : `${missingRates.length} uczniów czeka na ustalenie stawki.`}
+              ? "1 uczeń czeka na ustalenie ceny."
+              : `${missingRates.length} uczniów czeka na ustalenie ceny.`}
           </p>
           <p className="mt-1 text-xs text-amber-800">
-            Uczniowie dodani przez nauczycieli mają stawkę 0 zł do czasu, aż
-            ustawisz ją ręcznie:{" "}
+            Uczniowie bez ustalonej ceny za lekcję — bez niej nie da się
+            zapisać im lekcji:{" "}
             {missingRates.slice(0, 5).map((student, index) => (
               <span key={student.id}>
                 {index > 0 ? ", " : ""}

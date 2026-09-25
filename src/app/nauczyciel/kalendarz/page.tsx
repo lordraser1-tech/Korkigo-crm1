@@ -7,7 +7,9 @@ import {
   monthRange,
   toWallClockInput,
 } from "@/lib/datetime";
-import { LessonForm } from "@/components/lesson-form";
+import { LessonComposer } from "@/components/lesson-composer";
+import { getLessonComposerData } from "@/lib/services/subjects";
+import { createLessonsAction } from "@/app/actions/lessons";
 import { LessonList } from "@/components/lesson-list";
 import { MonthNav } from "@/components/month-nav";
 import { PageHeader } from "@/components/ui";
@@ -22,9 +24,10 @@ export default async function TeacherCalendarPage({
   const monthKey = /^\d{4}-\d{2}$/.test(m ?? "") ? m! : currentMonthKey();
   const { from, to } = monthRange(monthKey);
 
-  const [lessons, students] = await Promise.all([
+  const [lessons, students, composer] = await Promise.all([
     listLessons(actor, { from, to }),
     listStudentOptions(actor),
+    getLessonComposerData(actor),
   ]);
   const payments = await getLessonPaymentStates(
     actor,
@@ -52,8 +55,23 @@ export default async function TeacherCalendarPage({
           <h2 className="mb-4 text-base font-semibold text-slate-900">
             Nowa lekcja
           </h2>
-          <LessonForm
-            students={students}
+          <LessonComposer
+            action={createLessonsAction}
+            subjects={composer.subjects.map((subject) => ({
+              id: subject.id,
+              name: subject.name,
+              levels: subject.levels.map((level) => ({
+                id: level.id,
+                name: level.name,
+              })),
+            }))}
+            students={students.map((student) => ({
+              id: student.id,
+              fullName: student.fullName,
+              teacherId: student.teacherId,
+            }))}
+            teacherRates={composer.teacherRates}
+            fixedTeacherId={actor.teacherProfileId}
             defaultWallClock={`${toWallClockInput(from).slice(0, 10)}T16:00`}
           />
         </div>

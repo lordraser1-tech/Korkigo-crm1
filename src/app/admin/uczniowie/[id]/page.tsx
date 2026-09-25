@@ -4,7 +4,11 @@ import { requirePage } from "@/lib/auth";
 import { getStudent } from "@/lib/services/students";
 import { listTeachers } from "@/lib/services/teachers";
 import { listLessons } from "@/lib/services/lessons";
-import { getStudentBilling } from "@/lib/services/billing";
+import { getStudentBilling, getLessonPaymentStates } from "@/lib/services/billing";
+import { getStudentRates, listSubjectLevels } from "@/lib/services/subjects";
+import { getSpeakingClub } from "@/lib/services/speaking-club";
+import { RateEditor } from "@/components/rate-editor";
+import { SpeakingClubCard } from "@/components/speaking-club-card";
 import { NotFoundError } from "@/lib/errors";
 import { deleteStudentAction, updateStudentAction } from "@/app/actions/students";
 import { ActionForm, Field, SelectField } from "@/components/forms";
@@ -25,19 +29,28 @@ export default async function AdminStudentPage({
     if (error instanceof NotFoundError) notFound();
     throw error;
   });
-  const [teachers, lessons, billing] = await Promise.all([
+  const [teachers, lessons, billing, rates, speakingClub, levels] =
+    await Promise.all([
     listTeachers(actor, { includeInactive: true }),
     listLessons(actor, { studentId: student.id }),
     getStudentBilling(actor, student.id),
-  ]);
+    getStudentRates(actor, student.id),
+      getSpeakingClub(actor, student.id),
+      listSubjectLevels(actor),
+    ]);
+  const payments = await getLessonPaymentStates(
+    actor,
+    lessons.map((lesson) => lesson.id)
+  );
 
   return (
     <>
       <PageHeader
         title={student.fullName}
         description={
-          [student.languageLevel, student.subject].filter(Boolean).join(" • ") ||
-          "Karta ucznia"
+          student.languageLevel
+            ? `Poziom językowy: ${student.languageLevel}`
+            : "Karta ucznia"
         }
         actions={
           <Link href="/admin/uczniowie" className="btn-secondary">
@@ -59,14 +72,7 @@ export default async function AdminStudentPage({
                 <Field label="Imię" name="firstName" defaultValue={student.firstName} required />
                 <Field label="Nazwisko" name="lastName" defaultValue={student.lastName} required />
               </div>
-              <Field
-                label="Stawka ucznia (zł / lekcja)"
-                name="ratePerLesson"
-                inputMode="decimal"
-                defaultValue={student.ratePerLesson?.toFixed(2) ?? "0.00"}
-                hint="Widoczna wyłącznie w panelu administratora."
-                required
-              />
+
               <SelectField
                 label="Tryb rozliczeń"
                 name="billingMode"
@@ -85,10 +91,12 @@ export default async function AdminStudentPage({
               />
               <Field label="Telefon" name="contactPhone" defaultValue={student.contactPhone} />
               <Field label="E-mail" name="contactEmail" type="email" defaultValue={student.contactEmail} />
-              <div className="grid grid-cols-2 gap-3">
-                <Field label="Poziom" name="languageLevel" defaultValue={student.languageLevel} />
-                <Field label="Przedmiot" name="subject" defaultValue={student.subject} />
-              </div>
+              <Field
+                label="Poziom językowy"
+                name="languageLevel"
+                defaultValue={student.languageLevel}
+                hint="Opisowy, np. A2. Przedmiot i poziom wybiera się przy lekcji."
+              />
               <Field label="Opiekun" name="parentName" defaultValue={student.parentName} />
               <Field label="Telefon opiekuna" name="parentPhone" defaultValue={student.parentPhone} />
               <Field label="E-mail opiekuna" name="parentEmail" type="email" defaultValue={student.parentEmail} />
@@ -104,6 +112,19 @@ export default async function AdminStudentPage({
               />
             </ActionForm>
           </div>
+
+          <div className="card p-5">
+            <h2 className="mb-1 text-base font-semibold text-slate-900">
+              Ceny ucznia
+            </h2>
+            <p className="mb-4 text-xs text-slate-500">
+              Cena za lekcję, osobno dla każdego przedmiotu i poziomu.
+              Widoczna wyłącznie w panelu administratora.
+            </p>
+            <RateEditor kind="student" ownerId={student.id} rates={rates.rates} />
+          </div>
+
+          <SpeakingClubCard studentId={student.id} club={speakingClub} canUndo />
 
           <div className="card p-5">
             <h2 className="mb-2 text-base font-semibold text-slate-900">
@@ -128,12 +149,14 @@ export default async function AdminStudentPage({
             studentId={student.id}
             billingMode={student.billingMode ?? "POSTPAID"}
             billing={billing}
+            levels={levels.map((level) => ({ id: level.id, label: level.label }))}
           />
           <h2 className="mb-3 text-base font-semibold text-slate-900">
             Historia lekcji ({lessons.length})
           </h2>
           <LessonList
             lessons={lessons}
+            payments={payments}
             showTeacher
             emptyText="Brak lekcji dla tego ucznia."
           />

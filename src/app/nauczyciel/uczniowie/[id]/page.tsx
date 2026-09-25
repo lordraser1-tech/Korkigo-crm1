@@ -3,6 +3,9 @@ import { notFound } from "next/navigation";
 import { requirePage } from "@/lib/auth";
 import { getStudent } from "@/lib/services/students";
 import { listLessons } from "@/lib/services/lessons";
+import { getSpeakingClub } from "@/lib/services/speaking-club";
+import { getLessonPaymentStates } from "@/lib/services/billing";
+import { SpeakingClubCard } from "@/components/speaking-club-card";
 import { NotFoundError } from "@/lib/errors";
 import { updateStudentAction } from "@/app/actions/students";
 import { ActionForm, Field, SelectField } from "@/components/forms";
@@ -22,15 +25,23 @@ export default async function TeacherStudentPage({
     if (error instanceof NotFoundError) notFound();
     throw error;
   });
-  const lessons = await listLessons(actor, { studentId: student.id });
+  const [lessons, speakingClub] = await Promise.all([
+    listLessons(actor, { studentId: student.id }),
+    getSpeakingClub(actor, student.id),
+  ]);
+  const payments = await getLessonPaymentStates(
+    actor,
+    lessons.map((lesson) => lesson.id)
+  );
 
   return (
     <>
       <PageHeader
         title={student.fullName}
         description={
-          [student.languageLevel, student.subject].filter(Boolean).join(" • ") ||
-          "Karta ucznia"
+          student.languageLevel
+            ? `Poziom językowy: ${student.languageLevel}`
+            : "Karta ucznia"
         }
         actions={
           <Link href="/nauczyciel/uczniowie" className="btn-secondary">
@@ -56,10 +67,12 @@ export default async function TeacherStudentPage({
             </div>
             <Field label="Telefon" name="contactPhone" defaultValue={student.contactPhone} />
             <Field label="E-mail" name="contactEmail" type="email" defaultValue={student.contactEmail} />
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Poziom" name="languageLevel" defaultValue={student.languageLevel} />
-              <Field label="Przedmiot" name="subject" defaultValue={student.subject} />
-            </div>
+            <Field
+              label="Poziom językowy"
+              name="languageLevel"
+              defaultValue={student.languageLevel}
+              hint="Opisowy, np. A2. Przedmiot i poziom wybiera się przy lekcji."
+            />
             <Field label="Opiekun" name="parentName" defaultValue={student.parentName} />
             <Field label="Telefon opiekuna" name="parentPhone" defaultValue={student.parentPhone} />
             <Field label="E-mail opiekuna" name="parentEmail" type="email" defaultValue={student.parentEmail} />
@@ -81,11 +94,16 @@ export default async function TeacherStudentPage({
           </p>
         </div>
 
-        <section>
+        <section className="space-y-6">
+          <SpeakingClubCard studentId={student.id} club={speakingClub} />
           <h2 className="mb-3 text-base font-semibold text-slate-900">
             Historia lekcji ({lessons.length})
           </h2>
-          <LessonList lessons={lessons} emptyText="Brak lekcji dla tego ucznia." />
+          <LessonList
+            lessons={lessons}
+            payments={payments}
+            emptyText="Brak lekcji dla tego ucznia."
+          />
         </section>
       </div>
     </>

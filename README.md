@@ -52,8 +52,11 @@ jest jedynym zabezpieczeniem.
 
 | Zasób | `ADMIN` | `TEACHER` |
 | --- | --- | --- |
-| Uczniowie | wszyscy, z `ratePerLesson` | tylko własni, **bez** `ratePerLesson` |
-| Stawka ucznia | ustawia ręcznie | nie widzi i nie ustawia (`403`) |
+| Uczniowie | wszyscy, z cennikiem | tylko własni, **bez** cen |
+| Ceny uczniów (per przedmiot) | ustawia ręcznie | nie widzi i nie ustawia (`403`) |
+| Stawki nauczycieli | ustawia wszystkim | widzi wyłącznie swoje |
+| Przedmioty i poziomy | tworzy i edytuje | tylko odczyt (potrzebny do zapisu lekcji) |
+| Speaking Club | odznacza każdemu, cofa pomyłki | odznacza swoim uczniom |
 | Rachunki, wpłaty, salda | pełny dostęp | `403` — widzi wyłącznie flagę „Rozliczenia OK / Zaległość”, bez kwot |
 | Grafik i dyspozycyjność | wszyscy nauczyciele, z filtrem | tylko własny grafik — cudze `teacherId` jest ignorowane |
 | Moduł NDG i statystyki | pełny dostęp | `403` na całym module |
@@ -76,16 +79,53 @@ Szczegóły implementacji:
 - flaga rozliczeń dla nauczyciela to sam enum `OK` / `OVERDUE` — bez kwoty,
   terminu i numeru rachunku.
 
+## Przedmioty, poziomy i stawki
+
+Cennik jest dwuwymiarowy: **przedmiot → poziom → osoba**.
+
+- admin tworzy dowolne przedmioty (`Polski`, `Matematyka`…) i dowolną liczbę
+  poziomów w każdym (`Ogólny`, `Maturalny`, `Rozszerzony`…),
+- **stawka nauczyciela** i **cena ucznia** są ustalane osobno dla każdej
+  kombinacji — jeden nauczyciel może brać 60 zł za polski ogólny i 80 zł za
+  maturalny, a każdy uczeń ma własną cenę,
+- **przedmiot i poziom są cechą lekcji, nie ucznia** — jeden uczeń może brać
+  kilka przedmiotów; przy dodawaniu lekcji wybiera się uczeń → przedmiot →
+  poziom → nauczyciel, a formularz od razu pokazuje obie kwoty,
+- **bez ustalonej stawki lekcja się nie zapisze** — serwer odrzuca zapis
+  i mówi, czego brakuje, żeby nie powstawały lekcje „za darmo”.
+
+Wszystko w zakładce `/admin/przedmioty`: lista przedmiotów oraz dwie macierze
+(nauczyciele × poziomy, uczniowie × poziomy) z edycją w komórkach.
+
+## Speaking Club
+
+Za każde **10 lekcji zrealizowanych** (niezależnie od przedmiotu) uczeń dostaje
+jeden darmowy Speaking Club. Licznik i przycisk „Uczestniczył” są w karcie
+ucznia w obu panelach — admin u każdego, nauczyciel u swoich. Każde odznaczenie
+zapisuje datę i kto je wykonał; admin może cofnąć pomyłkę. Widok nie pokazuje
+żadnych kwot.
+
 ## Płatności i rachunki (faza 2)
 
 Każdy uczeń ma **tryb rozliczeń** (`Student.billingMode`), który decyduje o tym,
 jak powstaje rachunek:
 
-| Tryb | Jak działa |
-| --- | --- |
-| `POSTPAID` | rachunek zbiorczy na koniec miesiąca za lekcje zrealizowane |
-| `PER_LESSON` | osobny rachunek po każdej zrealizowanej lekcji |
-| `PREPAID` | rachunek za pakiet z góry; zrealizowane lekcje zdejmują jednostki |
+| Tryb | Jak działa | Kiedy lekcja jest „opłacona” |
+| --- | --- | --- |
+| `POSTPAID` | rachunek zbiorczy na koniec miesiąca | gdy rachunek za ten miesiąc jest opłacony w całości |
+| `PER_LESSON` | osobny rachunek po każdej lekcji | gdy wpłaty pokrywają jej koszt |
+| `PREPAID` | pakiet opłacany z góry | dopóki starcza wpłaconych środków (chronologicznie) |
+
+**Status płatności liczy się na żywo** — od razu po odznaczeniu lekcji jako
+zrealizowanej, bez czekania na rachunek. Rachunek pozostaje dokumentem (druk,
+NDG), ale nie warunkuje tego, co widać w interfejsie. Tagi `Opłacona /
+Częściowo / Nieopłacona / Po terminie` są przy lekcji w kalendarzu, w grafiku
+i w historii lekcji ucznia.
+
+**Saldo ucznia = wpłaty − wartość lekcji zrealizowanych.** Dodatnie to środki
+na koncie (np. reszta pakietu), ujemne to zaległość. Dzięki liczeniu z lekcji,
+a nie z rachunków, lekcja ponad opłacony pakiet od razu daje minus — wcześniej
+saldo pokazywało w takiej sytuacji zero.
 
 Zasady, których pilnuje warstwa serwisowa (`src/lib/services/billing.ts`):
 
@@ -254,6 +294,7 @@ Wszystkie endpointy wymagają ciasteczka sesji i same sprawdzają rolę.
 | `GET` | `/api/receivables` | salda i zaległości wszystkich uczniów |
 | `GET`/`PUT` | `/api/billing-settings` | dane wystawcy i termin płatności |
 | `GET` | `/api/schedule` | `?week=RRRR-MM-DD&teacherId=` — grafik tygodnia; nauczyciel zawsze dostaje własny |
+| `GET` | `/api/subjects` | przedmioty z poziomami |
 | `GET`/`POST` | `/api/messages` | GET: admin — skrzynka nadawcza, nauczyciel — odbiorcza. POST (admin): `{subject, body, recipient: "ALL" \| teacherId}` |
 | `POST`/`DELETE` | `/api/messages/{id}` | POST: nauczyciel oznacza swoją wiadomość jako przeczytaną. DELETE: admin usuwa |
 | `GET` | `/api/ndg` | `?year=&period=` — przegląd limitu; `?scope=MONTH\|QUARTER\|YEAR` — statystyki finansowe |

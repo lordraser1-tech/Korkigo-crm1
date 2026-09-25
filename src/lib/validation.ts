@@ -40,10 +40,9 @@ export const studentCreateSchema = z.object({
     { message: "Podaj poprawny adres e-mail opiekuna." }
   ),
   languageLevel: optionalText(20),
-  subject: optionalText(120),
   status: studentStatusSchema.default("ACTIVE"),
-  // Poniższe pola może ustawić WYŁĄCZNIE admin — serwis odrzuci je dla nauczyciela.
-  ratePerLesson: amountSchema.optional(),
+  // Tryb rozliczeń może ustawić WYŁĄCZNIE admin — serwis odrzuci go dla nauczyciela.
+  // Ceny ucznia żyją osobno, per przedmiot/poziom (StudentRate).
   billingMode: z.enum(["POSTPAID", "PER_LESSON", "PREPAID"]).optional(),
   teacherId: optionalText(40),
 });
@@ -57,7 +56,6 @@ export const teacherCreateSchema = z.object({
   lastName: trimmed.min(1, "Nazwisko jest wymagane.").max(80),
   phone: optionalText(40),
   level: optionalText(60),
-  ratePerLesson: amountSchema,
 });
 
 export const teacherUpdateSchema = z.object({
@@ -65,7 +63,6 @@ export const teacherUpdateSchema = z.object({
   lastName: trimmed.min(1).max(80).optional(),
   phone: optionalText(40).optional(),
   level: optionalText(60).optional(),
-  ratePerLesson: amountSchema.optional(),
   active: z.boolean().optional(),
 });
 
@@ -85,6 +82,7 @@ export const lessonCreateSchema = z
   .object({
     studentId: trimmed.min(1, "Wybierz ucznia."),
     teacherId: optionalText(40),
+    subjectLevelId: trimmed.min(1, "Wybierz przedmiot i poziom."),
     scheduledAt: wallClock,
     durationMinutes: z.coerce
       .number()
@@ -160,6 +158,8 @@ export const lessonInvoiceSchema = z.object({
 
 export const packageInvoiceSchema = z.object({
   studentId: trimmed.min(1, "Wybierz ucznia."),
+  /** Pakiet dotyczy konkretnego przedmiotu/poziomu — stąd bierze się cena. */
+  subjectLevelId: optionalText(40),
   quantity: z.coerce
     .number()
     .int("Liczba lekcji w pakiecie musi być całkowita.")
@@ -249,4 +249,40 @@ export const messageSchema = z
 /** Temat zajęć wpisywany przy lekcji; pusty tekst czyści pole. */
 export const lessonTopicSchema = z.object({
   topic: optionalText(200),
+});
+
+// ---------- PRZEDMIOTY, POZIOMY I STAWKI ----------
+
+export const subjectSchema = z.object({
+  name: trimmed.min(1, "Podaj nazwę przedmiotu.").max(80),
+});
+
+export const subjectLevelSchema = z.object({
+  subjectId: trimmed.min(1, "Wybierz przedmiot."),
+  name: trimmed.min(1, "Podaj nazwę poziomu.").max(80),
+});
+
+export const rateSchema = z.object({
+  subjectLevelId: trimmed.min(1, "Wybierz przedmiot i poziom."),
+  /**
+   * Puste pole kasuje stawkę — wtedy lekcji z tej kombinacji nie da się
+   * zapisać. Pusty wariant musi stać PRZED `amountSchema`, bo ten przepuściłby
+   * pusty ciąg jako zero.
+   */
+  amount: z
+    .union([z.literal(""), z.null(), z.undefined(), amountSchema])
+    .transform((v) => (v === "" || v === null || v === undefined ? null : v)),
+});
+
+export const teacherRateSchema = rateSchema.extend({
+  teacherId: trimmed.min(1, "Wskaż nauczyciela."),
+});
+
+export const studentRateSchema = rateSchema.extend({
+  studentId: trimmed.min(1, "Wskaż ucznia."),
+});
+
+export const speakingClubUseSchema = z.object({
+  studentId: trimmed.min(1, "Wskaż ucznia."),
+  note: optionalText(200),
 });

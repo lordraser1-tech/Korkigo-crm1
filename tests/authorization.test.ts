@@ -34,9 +34,16 @@ import {
   createStudent,
   createTeacher,
   describeDb,
+  getDefaultLevelId,
   prisma,
   resetDatabase,
 } from "./helpers/db";
+import {
+  getStudentRates,
+  getTeacherRates,
+  setStudentRate as setStudentRateService,
+  setTeacherRate as setTeacherRateService,
+} from "@/lib/services/subjects";
 
 describeDb("uprawnienia ról", () => {
   let admin: Awaited<ReturnType<typeof createAdmin>>;
@@ -66,18 +73,26 @@ describeDb("uprawnienia ról", () => {
     expect(students[0].id).toBe(annaStudentId);
   });
 
-  it("nauczyciel nigdy nie dostaje stawki ucznia", async () => {
+  it("nauczyciel nigdy nie dostaje cen ucznia", async () => {
     const [student] = await listStudents(anna);
-    expect(student.ratePerLesson).toBeNull();
+    expect(student.rateCount).toBeNull();
 
     const single = await getStudent(anna, annaStudentId);
-    expect(single.ratePerLesson).toBeNull();
+    expect(single.rateCount).toBeNull();
+
+    // Cennik ucznia to osobny serwis — i też jest zamknięty.
+    await expect(
+      getStudentRates(anna, annaStudentId)
+    ).rejects.toBeInstanceOf(ForbiddenError);
   });
 
-  it("admin widzi wszystkich uczniów ze stawkami", async () => {
+  it("admin widzi wszystkich uczniów i ich cenniki", async () => {
     const students = await listStudents(admin);
     expect(students).toHaveLength(2);
-    expect(students.map((s) => s.ratePerLesson).sort()).toEqual([120, 150]);
+    expect(students.every((s) => (s.rateCount ?? 0) > 0)).toBe(true);
+
+    const rates = await getStudentRates(admin, annaStudentId);
+    expect(rates.rates.find((rate) => rate.amount !== null)?.amount).toBe(120);
   });
 
   it("cudzy uczeń jest dla nauczyciela nieodnajdywalny", async () => {
@@ -93,26 +108,26 @@ describeDb("uprawnienia ról", () => {
     expect(students.every((s) => s.teacherId === anna.teacherProfileId)).toBe(true);
   });
 
-  it("nauczyciel dodaje ucznia do siebie, ze stawką 0 do ustalenia przez admina", async () => {
+  it("nauczyciel dodaje ucznia do siebie, bez cen — te ustala admin", async () => {
     const created = await createStudentService(anna, {
       firstName: "Nowy",
       lastName: "Uczeń",
     });
     expect(created.teacherId).toBe(anna.teacherProfileId);
-    expect(created.ratePerLesson).toBeNull();
+    expect(created.rateCount).toBeNull();
 
-    const fromDb = await prisma.student.findUniqueOrThrow({
-      where: { id: created.id },
+    const rates = await prisma.studentRate.count({
+      where: { studentId: created.id },
     });
-    expect(fromDb.ratePerLesson.toNumber()).toBe(0);
+    expect(rates).toBe(0);
   });
 
-  it("nauczyciel nie ustawi stawki ucznia przy dodawaniu", async () => {
+  it("nauczyciel nie ustawi ceny ucznia", async () => {
     await expect(
-      createStudentService(anna, {
-        firstName: "Nowy",
-        lastName: "Uczeń",
-        ratePerLesson: "200",
+      setStudentRateService(anna, {
+        studentId: annaStudentId,
+        subjectLevelId: getDefaultLevelId(),
+        amount: "200",
       })
     ).rejects.toBeInstanceOf(ForbiddenError);
   });
@@ -127,15 +142,17 @@ describeDb("uprawnienia ról", () => {
     ).rejects.toBeInstanceOf(ForbiddenError);
   });
 
-  it("nauczyciel nie zmieni stawki istniejącego ucznia", async () => {
+  it("cena ucznia nie zmienia się z panelu nauczyciela", async () => {
     await expect(
-      updateStudent(anna, annaStudentId, { ratePerLesson: "1" })
+      setStudentRateService(anna, {
+        studentId: annaStudentId,
+        subjectLevelId: getDefaultLevelId(),
+        amount: "1",
+      })
     ).rejects.toBeInstanceOf(ForbiddenError);
 
-    const fromDb = await prisma.student.findUniqueOrThrow({
-      where: { id: annaStudentId },
-    });
-    expect(fromDb.ratePerLesson.toNumber()).toBe(120);
+    const rates = await getStudentRates(admin, annaStudentId);
+    expect(rates.rates.find((rate) => rate.amount !== null)?.amount).toBe(120);
   });
 
   it("nauczyciel nie edytuje cudzego ucznia", async () => {
@@ -144,11 +161,14 @@ describeDb("uprawnienia ról", () => {
     ).rejects.toBeInstanceOf(NotFoundError);
   });
 
-  it("admin ustawia stawkę ucznia", async () => {
-    const updated = await updateStudent(admin, annaStudentId, {
-      ratePerLesson: "135,50",
+  it("admin ustawia cenę ucznia", async () => {
+    await setStudentRateService(admin, {
+      studentId: annaStudentId,
+      subjectLevelId: getDefaultLevelId(),
+      amount: "135,50",
     });
-    expect(updated.ratePerLesson).toBe(135.5);
+    const rates = await getStudentRates(admin, annaStudentId);
+    expect(rates.rates.find((rate) => rate.amount !== null)?.amount).toBe(135.5);
   });
 
   // ---------- NAUCZYCIELE ----------
@@ -163,18 +183,31 @@ describeDb("uprawnienia ról", () => {
     ).rejects.toBeInstanceOf(NotFoundError);
   });
 
-  it("nauczyciel widzi własny profil razem ze swoją stawką", async () => {
+  it("nauczyciel widzi własny profil i własne stawki", async () => {
     const profile = await getTeacher(anna, anna.teacherProfileId);
-    expect(profile.ratePerLesson).toBe(60);
+    expect(profile.rateCount).toBe(1);
+
+    const rates = await getTeacherRates(anna, anna.teacherProfileId);
+    expect(rates.rates.find((rate) => rate.amount !== null)?.amount).toBe(60);
   });
 
   it("nauczyciel nie zmieni własnej stawki ani statusu konta", async () => {
     await expect(
-      updateTeacher(anna, anna.teacherProfileId, { ratePerLesson: "999" })
+      setTeacherRateService(anna, {
+        teacherId: anna.teacherProfileId,
+        subjectLevelId: getDefaultLevelId(),
+        amount: "999",
+      })
     ).rejects.toBeInstanceOf(ForbiddenError);
     await expect(
       updateTeacher(anna, anna.teacherProfileId, { active: false })
     ).rejects.toBeInstanceOf(ForbiddenError);
+  });
+
+  it("nauczyciel nie podejrzy stawek innego nauczyciela", async () => {
+    await expect(
+      getTeacherRates(anna, piotr.teacherProfileId)
+    ).rejects.toBeInstanceOf(NotFoundError);
   });
 
   it("nauczyciel może poprawić własne dane kontaktowe", async () => {
@@ -185,10 +218,13 @@ describeDb("uprawnienia ról", () => {
   });
 
   it("admin zmienia stawkę nauczyciela", async () => {
-    const updated = await updateTeacher(admin, anna.teacherProfileId, {
-      ratePerLesson: "70",
+    await setTeacherRateService(admin, {
+      teacherId: anna.teacherProfileId,
+      subjectLevelId: getDefaultLevelId(),
+      amount: "70",
     });
-    expect(updated.ratePerLesson).toBe(70);
+    const rates = await getTeacherRates(admin, anna.teacherProfileId);
+    expect(rates.rates.find((rate) => rate.amount !== null)?.amount).toBe(70);
   });
 
   it("nauczyciel nie dopisze dyspozycyjności innemu nauczycielowi", async () => {
@@ -241,6 +277,7 @@ describeDb("uprawnienia ról", () => {
     await expect(
       createLessons(anna, {
         studentId: piotrStudentId,
+        subjectLevelId: getDefaultLevelId(),
         scheduledAt: "2026-09-21T16:00",
       })
     ).rejects.toBeInstanceOf(NotFoundError);
@@ -249,6 +286,7 @@ describeDb("uprawnienia ról", () => {
   it("lekcja cykliczna tworzy serię w tych samych godzinach lokalnych", async () => {
     const created = await createLessons(anna, {
       studentId: annaStudentId,
+      subjectLevelId: getDefaultLevelId(),
       scheduledAt: "2026-10-21T16:00",
       type: "RECURRING",
       repeatWeeks: 3,

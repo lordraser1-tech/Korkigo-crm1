@@ -8,7 +8,9 @@ import {
   monthRange,
   toWallClockInput,
 } from "@/lib/datetime";
-import { LessonForm } from "@/components/lesson-form";
+import { LessonComposer } from "@/components/lesson-composer";
+import { getLessonComposerData } from "@/lib/services/subjects";
+import { createLessonsAction } from "@/app/actions/lessons";
 import { LessonList } from "@/components/lesson-list";
 import { MonthNav } from "@/components/month-nav";
 import { PageHeader } from "@/components/ui";
@@ -23,10 +25,11 @@ export default async function AdminLessonsPage({
   const monthKey = /^\d{4}-\d{2}$/.test(m ?? "") ? m! : currentMonthKey();
   const { from, to } = monthRange(monthKey);
 
-  const [lessons, students, teachers] = await Promise.all([
+  const [lessons, students, teachers, composer] = await Promise.all([
     listLessons(actor, { from, to, teacherId: teacherId ?? null }),
     listStudentOptions(actor),
     listTeachers(actor, { includeInactive: true }),
+    getLessonComposerData(actor),
   ]);
   const payments = await getLessonPaymentStates(
     actor,
@@ -86,9 +89,27 @@ export default async function AdminLessonsPage({
           <h2 className="mb-4 text-base font-semibold text-slate-900">
             Nowa lekcja
           </h2>
-          <LessonForm
-            students={students}
-            teachers={teachers}
+          <LessonComposer
+            action={createLessonsAction}
+            subjects={composer.subjects.map((subject) => ({
+              id: subject.id,
+              name: subject.name,
+              levels: subject.levels.map((level) => ({
+                id: level.id,
+                name: level.name,
+              })),
+            }))}
+            students={students.map((student) => ({
+              id: student.id,
+              fullName: student.fullName,
+              teacherId: student.teacherId,
+            }))}
+            teachers={teachers.map((teacher) => ({
+              id: teacher.id,
+              fullName: teacher.fullName,
+            }))}
+            teacherRates={composer.teacherRates}
+            studentRates={composer.studentRates}
             defaultWallClock={`${toWallClockInput(from).slice(0, 10)}T16:00`}
           />
         </div>

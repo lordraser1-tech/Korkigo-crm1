@@ -3,7 +3,6 @@ import { z } from "zod";
 import type { Actor } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { ForbiddenError, NotFoundError, ValidationError } from "@/lib/errors";
-import { toAmount } from "@/lib/money";
 import { hashPassword, verifyPassword } from "@/lib/password";
 import {
   availabilitySchema,
@@ -21,8 +20,8 @@ export type TeacherDto = {
   fullName: string;
   phone: string | null;
   level: string | null;
-  /** Stawka wypłacana nauczycielowi — widzi ją admin oraz sam zainteresowany. */
-  ratePerLesson: number;
+  /** Ile stawek ma ustalonych — szczegóły w zakładce Przedmioty. */
+  rateCount: number;
   active: boolean;
   studentCount: number;
   createdAt: string;
@@ -35,11 +34,10 @@ const TEACHER_SELECT = {
   lastName: true,
   phone: true,
   level: true,
-  ratePerLesson: true,
   active: true,
   createdAt: true,
   user: { select: { email: true } },
-  _count: { select: { students: true } },
+  _count: { select: { students: true, rates: true } },
 } satisfies Prisma.TeacherProfileSelect;
 
 type TeacherRow = Prisma.TeacherProfileGetPayload<{ select: typeof TEACHER_SELECT }>;
@@ -54,7 +52,7 @@ function mapTeacher(row: TeacherRow): TeacherDto {
     fullName: `${row.firstName} ${row.lastName}`,
     phone: row.phone,
     level: row.level,
-    ratePerLesson: toAmount(row.ratePerLesson),
+    rateCount: row._count.rates,
     active: row.active,
     studentCount: row._count.students,
     createdAt: row.createdAt.toISOString(),
@@ -126,7 +124,6 @@ export async function createTeacher(
       lastName: data.lastName,
       phone: data.phone,
       level: data.level,
-      ratePerLesson: new Prisma.Decimal(data.ratePerLesson.toFixed(2)),
       user: { create: { email: data.email, passwordHash, role: "TEACHER" } },
     },
     select: TEACHER_SELECT,
@@ -145,10 +142,7 @@ export async function updateTeacher(
     if (actor.teacherProfileId !== id) {
       throw new NotFoundError("Nie znaleziono nauczyciela.");
     }
-    // Własną stawkę i aktywność konta zmienia wyłącznie admin.
-    if (data.ratePerLesson !== undefined) {
-      throw new ForbiddenError("Stawkę nauczyciela ustala wyłącznie administrator.");
-    }
+    // Aktywność konta zmienia wyłącznie admin (stawki żyją w osobnym serwisie).
     if (data.active !== undefined) {
       throw new ForbiddenError("Statusu konta nie zmienia nauczyciel.");
     }
@@ -159,9 +153,6 @@ export async function updateTeacher(
   if (data.lastName !== undefined) update.lastName = data.lastName;
   if (data.phone !== undefined) update.phone = data.phone;
   if (data.level !== undefined) update.level = data.level;
-  if (data.ratePerLesson !== undefined) {
-    update.ratePerLesson = new Prisma.Decimal(data.ratePerLesson.toFixed(2));
-  }
   if (data.active !== undefined) update.active = data.active;
 
   const exists = await prisma.teacherProfile.findUnique({

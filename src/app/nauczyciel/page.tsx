@@ -42,7 +42,7 @@ export default async function TeacherDashboard() {
         <StatCard
           label="Zarobek (miesiąc)"
           value={formatPLN(earnings.total)}
-          hint={`${earnings.completedLessons} × ${formatPLN(earnings.ratePerLesson)}`}
+          hint={`${earnings.completedLessons} lekcji zrealizowanych`}
         />
       </div>
 

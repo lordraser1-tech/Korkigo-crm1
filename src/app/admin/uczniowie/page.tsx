@@ -105,18 +105,16 @@ export default async function AdminStudentsPage({
             </div>
             <Field label="Telefon" name="contactPhone" />
             <Field label="E-mail" name="contactEmail" type="email" />
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Poziom" name="languageLevel" placeholder="np. A2" />
-              <Field label="Przedmiot" name="subject" placeholder="np. Polski ogólny" />
-            </div>
             <Field
-              label="Stawka ucznia (zł / lekcja)"
-              name="ratePerLesson"
-              type="text"
-              inputMode="decimal"
-              defaultValue="0"
-              hint="Kwota, którą płaci uczeń. Nauczyciel jej nie zobaczy."
+              label="Poziom językowy"
+              name="languageLevel"
+              placeholder="np. A2"
+              hint="Przedmiot i poziom wybiera się przy każdej lekcji."
             />
+            <p className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600">
+              Ceny ustalisz po dodaniu ucznia — w jego karcie albo w zakładce
+              „Przedmioty”, osobno dla każdego przedmiotu i poziomu.
+            </p>
             <SelectField
               label="Nauczyciel"
               name="teacherId"

@@ -2,6 +2,8 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requirePage } from "@/lib/auth";
 import { getTeacher, listAvailability } from "@/lib/services/teachers";
+import { getTeacherRates } from "@/lib/services/subjects";
+import { RateEditor } from "@/components/rate-editor";
 import { listStudents } from "@/lib/services/students";
 import { getTeacherEarnings } from "@/lib/services/finance";
 import { NotFoundError } from "@/lib/errors";
@@ -31,10 +33,11 @@ export default async function AdminTeacherPage({
   });
 
   const monthKey = currentMonthKey();
-  const [students, availability, earnings] = await Promise.all([
+  const [students, availability, earnings, rates] = await Promise.all([
     listStudents(actor, { teacherId: teacher.id }),
     listAvailability(actor, teacher.id),
     getTeacherEarnings(actor, teacher.id, monthKey),
+    getTeacherRates(actor, teacher.id),
   ]);
 
   return (
@@ -50,7 +53,11 @@ export default async function AdminTeacherPage({
       />
 
       <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard label="Stawka" value={formatPLN(teacher.ratePerLesson)} hint="za lekcję" />
+        <StatCard
+          label="Ustalone stawki"
+          value={String(teacher.rateCount)}
+          hint="przedmiotów/poziomów"
+        />
         <StatCard label="Uczniowie" value={String(teacher.studentCount)} />
         <StatCard
           label="Lekcje zrealizowane"
@@ -78,13 +85,7 @@ export default async function AdminTeacherPage({
               </div>
               <Field label="Telefon" name="phone" defaultValue={teacher.phone} />
               <Field label="Poziom / certyfikaty" name="level" defaultValue={teacher.level} />
-              <Field
-                label="Stawka nauczyciela (zł / lekcja)"
-                name="ratePerLesson"
-                inputMode="decimal"
-                defaultValue={teacher.ratePerLesson.toFixed(2)}
-                required
-              />
+
               <SelectField
                 label="Status konta"
                 name="active"
@@ -95,6 +96,18 @@ export default async function AdminTeacherPage({
                 ]}
               />
             </ActionForm>
+          </div>
+
+          <div className="card p-5">
+            <h2 className="mb-1 text-base font-semibold text-slate-900">
+              Stawki nauczyciela
+            </h2>
+            <p className="mb-4 text-xs text-slate-500">
+              Kwota wypłacana za zrealizowaną lekcję, osobno dla każdego
+              przedmiotu i poziomu. Puste pole = brak stawki, czyli blokada
+              zapisu lekcji.
+            </p>
+            <RateEditor kind="teacher" ownerId={teacher.id} rates={rates.rates} />
           </div>
 
           <div className="card p-5">

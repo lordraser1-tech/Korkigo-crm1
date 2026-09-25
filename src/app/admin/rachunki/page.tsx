@@ -6,6 +6,7 @@ import {
   type InvoiceFilters,
 } from "@/lib/services/billing";
 import { listStudents } from "@/lib/services/students";
+import { listSubjectLevels } from "@/lib/services/subjects";
 import { getNdgOverview } from "@/lib/services/ndg";
 import { NdgBanner } from "@/components/ndg-banner";
 import {
@@ -32,7 +33,7 @@ export default async function AdminInvoicesPage({
   const { m, state } = await searchParams;
   const monthKey = /^\d{4}-\d{2}$/.test(m ?? "") ? m! : currentMonthKey();
 
-  const [invoices, students, unbilled, ndg] = await Promise.all([
+  const [invoices, students, unbilled, ndg, levels] = await Promise.all([
     listInvoices(actor, {
       month: monthKey,
       state: (state as InvoiceFilters["state"]) || null,
@@ -40,6 +41,7 @@ export default async function AdminInvoicesPage({
     listStudents(actor),
     listUnbilledLessons(actor),
     getNdgOverview(actor),
+    listSubjectLevels(actor),
   ]);
 
   const billable = students.filter((student) => student.status !== "ENDED");
@@ -220,7 +222,7 @@ export default async function AdminInvoicesPage({
                   required
                   options={perLessonUnbilled.slice(0, 100).map((lesson) => ({
                     value: lesson.lessonId,
-                    label: `${lesson.studentName} — ${formatDateTime(
+                    label: `${lesson.studentName} — ${lesson.subjectLabel} — ${formatDateTime(
                       new Date(lesson.scheduledAt)
                     )} (${formatPLN(lesson.amount)})`,
                   }))}
@@ -261,6 +263,18 @@ export default async function AdminInvoicesPage({
                     value: student.id,
                     label: student.fullName,
                   }))}
+                />
+                <SelectField
+                  label="Przedmiot i poziom"
+                  name="subjectLevelId"
+                  options={[
+                    { value: "", label: "— cena podana ręcznie —" },
+                    ...levels.map((level) => ({
+                      value: level.id,
+                      label: level.label,
+                    })),
+                  ]}
+                  hint="Stąd bierze się cena pakietu."
                 />
                 <div className="grid grid-cols-2 gap-3">
                   <Field

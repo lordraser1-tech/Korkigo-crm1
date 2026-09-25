@@ -9,7 +9,7 @@ import {
   createMonthlyInvoiceAction,
   createPackageInvoiceAction,
 } from "@/app/actions/billing";
-import { ActionForm, Field } from "@/components/forms";
+import { ActionForm, Field, SelectField } from "@/components/forms";
 import { BILLING_MODE_LABEL, InvoiceStateBadge } from "@/components/billing";
 import { currentMonthKey, formatDate } from "@/lib/datetime";
 import { formatPLN } from "@/lib/money";
@@ -20,9 +20,12 @@ export function StudentBillingCard({
   studentId,
   billingMode,
   billing,
+  levels = [],
 }: {
   studentId: string;
   billingMode: BillingMode;
+  /** Przedmioty/poziomy do rachunku za pakiet. */
+  levels?: Array<{ id: string; label: string }>;
   billing: {
     balance: StudentBalanceDto;
     invoices: InvoiceDto[];
@@ -41,9 +44,12 @@ export function StudentBillingCard({
 
       <div className="mb-5 grid gap-3 sm:grid-cols-4">
         <div>
-          <p className="text-xs uppercase tracking-wide text-slate-500">Wystawiono</p>
+          <p className="text-xs uppercase tracking-wide text-slate-500">Naliczono</p>
           <p className="text-lg font-semibold text-slate-900">
-            {formatPLN(balance.invoiced)}
+            {formatPLN(balance.charged)}
+          </p>
+          <p className="text-xs text-slate-500">
+            rachunki: {formatPLN(balance.invoiced)}
           </p>
         </div>
         <div>
@@ -64,12 +70,13 @@ export function StudentBillingCard({
         </div>
         <div>
           <p className="text-xs uppercase tracking-wide text-slate-500">
-            {billingMode === "PREPAID" ? "Pakiet" : "Nierozliczone lekcje"}
+            Lekcje bez opłaty
           </p>
           <p className="text-lg font-semibold text-slate-900">
-            {billingMode === "PREPAID"
-              ? `${balance.prepaidRemaining ?? 0} lekcji`
-              : unbilledLessons}
+            {balance.unpaidLessons}
+          </p>
+          <p className="text-xs text-slate-500">
+            bez rachunku: {unbilledLessons}
           </p>
         </div>
       </div>
@@ -91,6 +98,17 @@ export function StudentBillingCard({
             className="space-y-3"
           >
             <input type="hidden" name="studentId" value={studentId} />
+            <SelectField
+              label="Przedmiot i poziom"
+              name="subjectLevelId"
+              options={[
+                { value: "", label: "— cena podana ręcznie —" },
+                ...levels.map((level) => ({
+                  value: level.id,
+                  label: level.label,
+                })),
+              ]}
+            />
             <div className="grid grid-cols-2 gap-3">
               <Field
                 label="Liczba lekcji"

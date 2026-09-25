@@ -94,6 +94,9 @@ export function LessonList({
                       • {lesson.teacherName}
                     </span>
                   ) : null}
+                  <span className="ml-2 text-xs text-slate-500">
+                    {lesson.subjectLabel}
+                  </span>
                   {lesson.seriesId ? (
                     <span className="ml-2 text-xs text-slate-400">cykliczna</span>
                   ) : null}

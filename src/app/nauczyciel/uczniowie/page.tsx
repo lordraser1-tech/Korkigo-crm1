@@ -40,14 +40,12 @@ export default async function TeacherStudentsPage() {
             </div>
             <Field label="Telefon" name="contactPhone" />
             <Field label="E-mail" name="contactEmail" type="email" />
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Poziom" name="languageLevel" placeholder="np. A2" />
-              <Field
-                label="Przedmiot"
-                name="subject"
-                placeholder="np. Polski ogólny"
-              />
-            </div>
+            <Field
+              label="Poziom językowy"
+              name="languageLevel"
+              placeholder="np. A2"
+              hint="Przedmiot i poziom wybiera się przy każdej lekcji."
+            />
             <details className="rounded-lg bg-slate-50 p-3">
               <summary className="cursor-pointer text-sm font-medium text-slate-700">
                 Dane opiekuna (opcjonalnie)

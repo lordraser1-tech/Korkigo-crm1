@@ -105,6 +105,9 @@ export function ScheduleWeek({
                         lesson.studentName
                       )}
                     </p>
+                    <p className="text-[11px] text-slate-500">
+                      {lesson.subjectLabel}
+                    </p>
                     {showTeacher ? (
                       <p className="text-[11px] text-slate-500">{lesson.teacherName}</p>
                     ) : null}

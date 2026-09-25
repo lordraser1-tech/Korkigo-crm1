@@ -24,6 +24,7 @@ import {
   createStudent,
   createTeacher,
   describeDb,
+  getDefaultLevelId,
   prisma,
   resetDatabase,
 } from "./helpers/db";
@@ -180,8 +181,9 @@ describeDb("grafik i dyspozycja", () => {
         status: "COMPLETED",
       });
 
+      // Bez wpłaty lekcja jest nieopłacona od razu — nie czekamy na rachunek.
       let states = await getLessonPaymentStates(admin, [lessonId]);
-      expect(states.get(lessonId)?.state).toBe("NOT_INVOICED");
+      expect(states.get(lessonId)?.state).toBe("UNPAID");
 
       const invoice = await createLessonInvoice(admin, {
         lessonId,
@@ -283,20 +285,19 @@ describeDb("grafik i dyspozycja", () => {
 
       const pakiet = await createPackageInvoice(admin, {
         studentId: prepaidId,
+        subjectLevelId: getDefaultLevelId(),
         quantity: 2,
         issuedAt: "2026-09-01",
       });
 
-      // Pakiet wystawiony, ale jeszcze nieopłacony.
+      // Pakiet wystawiony, ale jeszcze nieopłacony — nic nie jest pokryte.
       let states = await getLessonPaymentStates(
         admin,
         [pierwsza, druga, trzecia],
         new Date("2026-09-02")
       );
       expect(states.get(pierwsza)?.state).toBe("UNPAID");
-      expect(states.get(pierwsza)?.fromPackage).toBe(true);
-      expect(states.get(trzecia)?.state).toBe("NOT_INVOICED");
-      expect(states.get(trzecia)?.fromPackage).toBe(false);
+      expect(states.get(trzecia)?.state).toBe("UNPAID");
 
       await recordPayment(admin, {
         studentId: prepaidId,
@@ -304,10 +305,12 @@ describeDb("grafik i dyspozycja", () => {
         amount: pakiet.totalAmount.toFixed(2),
       });
 
+      // Po wpłacie środki pokrywają dwie pierwsze lekcje, trzecia czeka.
       states = await getLessonPaymentStates(admin, [pierwsza, druga, trzecia]);
       expect(states.get(pierwsza)?.state).toBe("PAID");
+      expect(states.get(pierwsza)?.fromPackage).toBe(true);
       expect(states.get(druga)?.state).toBe("PAID");
-      expect(states.get(trzecia)?.state).toBe("NOT_INVOICED");
+      expect(states.get(trzecia)?.state).toBe("UNPAID");
     });
   });
 

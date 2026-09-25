@@ -1,5 +1,6 @@
 import { requirePage } from "@/lib/auth";
 import { getMyTeacherProfile, listAvailability } from "@/lib/services/teachers";
+import { getTeacherRates } from "@/lib/services/subjects";
 import {
   changeOwnPasswordAction,
   createAvailabilityAction,
@@ -12,9 +13,10 @@ import { PageHeader, WEEKDAY_LABEL } from "@/components/ui";
 
 export default async function TeacherSettingsPage() {
   const actor = await requirePage("TEACHER");
-  const [profile, availability] = await Promise.all([
+  const [profile, availability, rates] = await Promise.all([
     getMyTeacherProfile(actor),
     listAvailability(actor),
+    getTeacherRates(actor, actor.teacherProfileId),
   ]);
 
   return (
@@ -42,14 +44,32 @@ export default async function TeacherSettingsPage() {
             />
           </ActionForm>
           <div className="mt-5 rounded-lg bg-slate-50 p-4">
-            <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
-              Twoja stawka za lekcję
+            <p className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500">
+              Twoje stawki za lekcję
             </p>
-            <p className="mt-1 text-xl font-semibold text-slate-900">
-              {formatPLN(profile.ratePerLesson)}
-            </p>
-            <p className="mt-1 text-xs text-slate-500">
-              Stawkę ustala administrator — w razie pytań skontaktuj się z nim.
+            {rates.rates.filter((rate) => rate.amount !== null).length === 0 ? (
+              <p className="text-sm text-slate-600">
+                Nie masz jeszcze ustalonych stawek.
+              </p>
+            ) : (
+              <ul className="space-y-1 text-sm">
+                {rates.rates
+                  .filter((rate) => rate.amount !== null)
+                  .map((rate) => (
+                    <li
+                      key={rate.subjectLevelId}
+                      className="flex justify-between gap-3"
+                    >
+                      <span className="text-slate-700">{rate.label}</span>
+                      <span className="font-semibold text-slate-900">
+                        {formatPLN(rate.amount ?? 0)}
+                      </span>
+                    </li>
+                  ))}
+              </ul>
+            )}
+            <p className="mt-2 text-xs text-slate-500">
+              Stawki ustala administrator — w razie pytań skontaktuj się z nim.
             </p>
           </div>
         </div>

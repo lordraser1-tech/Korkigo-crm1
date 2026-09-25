@@ -60,7 +60,36 @@ async function seedAdmin(): Promise<AdminActor> {
   };
 }
 
-async function seedDemo() {
+/** Przedmioty i poziomy demo. Zwraca mapę nazwa -> id poziomu. */
+async function seedSubjects(): Promise<Record<string, string>> {
+  const plan = [
+    { subject: "Polski", levels: ["Ogólny", "Maturalny"] },
+    { subject: "Matematyka", levels: ["Podstawowy", "Rozszerzony"] },
+  ];
+
+  const levels: Record<string, string> = {};
+  for (const entry of plan) {
+    const subject = await prisma.subject.upsert({
+      where: { name: entry.subject },
+      update: {},
+      create: { name: entry.subject },
+    });
+    for (const levelName of entry.levels) {
+      const level = await prisma.subjectLevel.upsert({
+        where: {
+          subjectId_name: { subjectId: subject.id, name: levelName },
+        },
+        update: {},
+        create: { subjectId: subject.id, name: levelName },
+      });
+      levels[`${entry.subject} · ${levelName}`] = level.id;
+    }
+  }
+  console.log(`✔ Przedmioty demo: ${Object.keys(levels).length} poziomów`);
+  return levels;
+}
+
+async function seedDemo(levels: Record<string, string>) {
   const passwordHash = await bcrypt.hash("nauczyciel123", 12);
 
   const teachers = [
@@ -69,14 +98,18 @@ async function seedDemo() {
       firstName: "Anna",
       lastName: "Kowalska",
       level: "C1, glottodydaktyka",
-      rate: 60,
+      rates: { "Polski · Ogólny": 60, "Polski · Maturalny": 80 },
     },
     {
       email: "piotr.nowak@korkigo.pl",
       firstName: "Piotr",
       lastName: "Nowak",
       level: "C2",
-      rate: 55,
+      rates: {
+        "Polski · Ogólny": 55,
+        "Polski · Maturalny": 75,
+        "Matematyka · Podstawowy": 65,
+      },
     },
   ];
 
@@ -96,7 +129,12 @@ async function seedDemo() {
         lastName: teacher.lastName,
         phone: "+48 600 000 00" + index,
         level: teacher.level,
-        ratePerLesson: money(teacher.rate),
+        rates: {
+          create: Object.entries(teacher.rates).map(([label, amount]) => ({
+            subjectLevelId: levels[label],
+            amount: money(amount),
+          })),
+        },
         user: {
           create: { email: teacher.email, passwordHash, role: "TEACHER" },
         },
@@ -114,16 +152,16 @@ async function seedDemo() {
         firstName: index === 0 ? "Olena" : "Dzmitry",
         lastName: index === 0 ? "Tkachenko" : "Kavalenka",
         languageLevel: "A2",
-        subject: "Polski ogólny",
-        rate: 90,
+        lessonLevel: "Polski · Ogólny",
+        rates: { "Polski · Ogólny": 90 },
         billingMode: "POSTPAID" as const,
       },
       {
         firstName: index === 0 ? "Sofia" : "Alesia",
         lastName: index === 0 ? "Bondarenko" : "Marozava",
         languageLevel: "B1",
-        subject: "Polski maturalny",
-        rate: 100,
+        lessonLevel: "Polski · Maturalny",
+        rates: { "Polski · Maturalny": 100, "Polski · Ogólny": 85 },
         billingMode: index === 0 ? ("PREPAID" as const) : ("PER_LESSON" as const),
       },
     ];
@@ -136,10 +174,17 @@ async function seedDemo() {
           contactEmail: `${student.firstName.toLowerCase()}@example.com`,
           contactPhone: "+48 700 100 20" + studentIndex,
           languageLevel: student.languageLevel,
-          subject: student.subject,
-          ratePerLesson: money(student.rate),
           billingMode: student.billingMode,
           teacherId: profile.id,
+          rates: {
+            create: Object.entries(student.rates)
+              // Uczeń dostaje cenę tylko dla poziomów, które jego nauczyciel prowadzi.
+              .filter(([label]) => teacher.rates[label as keyof typeof teacher.rates])
+              .map(([label, amount]) => ({
+                subjectLevelId: levels[label],
+                amount: money(amount),
+              })),
+          },
         },
       });
 
@@ -161,6 +206,7 @@ async function seedDemo() {
           data: {
             studentId: created.id,
             teacherId: profile.id,
+            subjectLevelId: levels[student.lessonLevel],
             scheduledAt,
             durationMinutes: 60,
             type: "RECURRING",
@@ -214,8 +260,13 @@ async function seedBilling(admin: AdminActor) {
   for (const student of students) {
     try {
       if (student.billingMode === "PREPAID") {
+        const level = await prisma.lesson.findFirst({
+          where: { studentId: student.id },
+          select: { subjectLevelId: true },
+        });
         const invoice = await createPackageInvoice(admin, {
           studentId: student.id,
+          subjectLevelId: level?.subjectLevelId,
           quantity: 10,
           issuedAt: `${previousMonth}-05`,
         });
@@ -339,7 +390,8 @@ async function seedMessages(admin: AdminActor) {
 async function main() {
   const admin = await seedAdmin();
   if (process.env.SEED_DEMO === "true" || process.argv.includes("--demo")) {
-    await seedDemo();
+    const levels = await seedSubjects();
+    await seedDemo(levels);
     await seedBilling(admin);
     await seedNdg(admin);
     await seedMessages(admin);

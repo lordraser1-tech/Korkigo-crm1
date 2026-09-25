@@ -10,6 +10,7 @@ import {
   lessonTopicSchema,
   lessonUpdateSchema,
 } from "@/lib/validation";
+import { resolveLessonRates } from "@/lib/services/subjects";
 
 export type LessonDto = {
   id: string;
@@ -25,6 +26,9 @@ export type LessonDto = {
   status: LessonStatus;
   /** Temat zajęć — wpisuje nauczyciel przy swojej lekcji. */
   topic: string | null;
+  subjectLevelId: string;
+  /** „Polski · Maturalny” — przedmiot i poziom tej konkretnej lekcji. */
+  subjectLabel: string;
 };
 
 const LESSON_SELECT = {
@@ -37,6 +41,10 @@ const LESSON_SELECT = {
   seriesId: true,
   status: true,
   topic: true,
+  subjectLevelId: true,
+  subjectLevel: {
+    select: { name: true, subject: { select: { name: true } } },
+  },
   student: { select: { firstName: true, lastName: true } },
   teacher: { select: { firstName: true, lastName: true } },
 } satisfies Prisma.LessonSelect;
@@ -59,6 +67,8 @@ function mapLesson(row: LessonRow): LessonDto {
     seriesId: row.seriesId,
     status: row.status,
     topic: row.topic,
+    subjectLevelId: row.subjectLevelId,
+    subjectLabel: `${row.subjectLevel.subject.name} · ${row.subjectLevel.name}`,
   };
 }
 
@@ -193,12 +203,21 @@ export async function createLessons(
   const data = lessonCreateSchema.parse(input);
   const target = await resolveLessonTarget(actor, data.studentId, data.teacherId);
 
+  // Lekcja bez ustalonych stawek nie powstaje — inaczej trafiłaby na rachunek
+  // jako darmowa i wypaczyła zarówno wypłatę, jak i saldo ucznia.
+  await resolveLessonRates({
+    teacherId: target.teacherId,
+    studentId: target.studentId,
+    subjectLevelId: data.subjectLevelId,
+  });
+
   const repeats = data.type === "RECURRING" ? data.repeatWeeks : 1;
   const seriesId = data.type === "RECURRING" ? randomUUID() : null;
 
   const rows = Array.from({ length: repeats }, (_, index) => ({
     studentId: target.studentId,
     teacherId: target.teacherId,
+    subjectLevelId: data.subjectLevelId,
     scheduledAt: wallClockToUtc(addWeeksToWallClock(data.scheduledAt, index)),
     durationMinutes: data.durationMinutes,
     type: data.type,

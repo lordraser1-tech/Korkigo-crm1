@@ -3,7 +3,6 @@ import { requirePage } from "@/lib/auth";
 import { listTeachers } from "@/lib/services/teachers";
 import { createTeacherAction } from "@/app/actions/teachers";
 import { ActionForm, Field } from "@/components/forms";
-import { formatPLN } from "@/lib/money";
 import { Badge, EmptyState, PageHeader } from "@/components/ui";
 
 export default async function AdminTeachersPage() {
@@ -32,7 +31,7 @@ export default async function AdminTeachersPage() {
                     <th className="px-4 py-2.5">E-mail</th>
                     <th className="px-4 py-2.5">Poziom</th>
                     <th className="px-4 py-2.5">Uczniowie</th>
-                    <th className="px-4 py-2.5">Stawka</th>
+                    <th className="px-4 py-2.5">Stawki</th>
                     <th className="px-4 py-2.5">Status</th>
                   </tr>
                 </thead>
@@ -54,8 +53,20 @@ export default async function AdminTeachersPage() {
                       <td className="px-4 py-2.5 text-slate-600">
                         {teacher.studentCount}
                       </td>
-                      <td className="px-4 py-2.5 font-medium text-slate-900">
-                        {formatPLN(teacher.ratePerLesson)}
+                      <td className="px-4 py-2.5">
+                        {teacher.rateCount === 0 ? (
+                          <Link
+                            href="/admin/przedmioty"
+                            className="font-medium text-amber-700 underline"
+                          >
+                            brak stawek
+                          </Link>
+                        ) : (
+                          <span className="text-slate-600">
+                            {teacher.rateCount}{" "}
+                            {teacher.rateCount === 1 ? "stawka" : "ustalonych"}
+                          </span>
+                        )}
                       </td>
                       <td className="px-4 py-2.5">
                         {teacher.active ? (
@@ -99,14 +110,10 @@ export default async function AdminTeachersPage() {
             />
             <Field label="Telefon" name="phone" />
             <Field label="Poziom / certyfikaty" name="level" placeholder="np. C1" />
-            <Field
-              label="Stawka nauczyciela (zł / lekcja)"
-              name="ratePerLesson"
-              inputMode="decimal"
-              defaultValue="0"
-              required
-              hint="Kwota wypłacana nauczycielowi za zrealizowaną lekcję."
-            />
+            <p className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600">
+              Stawki ustalisz po utworzeniu konta — w zakładce „Przedmioty”,
+              osobno dla każdego przedmiotu i poziomu.
+            </p>
           </ActionForm>
         </div>
       </div>

@@ -3,7 +3,6 @@ import { z } from "zod";
 import type { Actor } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { ForbiddenError, NotFoundError, ValidationError } from "@/lib/errors";
-import { toAmount } from "@/lib/money";
 import { studentCreateSchema, studentUpdateSchema } from "@/lib/validation";
 import { getPaymentFlags, type PaymentFlag } from "@/lib/services/billing";
 
@@ -18,15 +17,14 @@ export type StudentDto = {
   parentPhone: string | null;
   parentEmail: string | null;
   languageLevel: string | null;
-  subject: string | null;
   status: StudentStatus;
   teacherId: string | null;
   teacherName: string | null;
   /**
-   * Stawka płacona przez ucznia. Dla roli TEACHER zawsze `null` — pole nie jest
-   * nawet pobierane z bazy (patrz `selectFor`).
+   * Ile cen ma ustalonych (per przedmiot/poziom). Dla roli TEACHER zawsze
+   * `null` — ceny uczniów nie są nawet pobierane z bazy (patrz `selectFor`).
    */
-  ratePerLesson: number | null;
+  rateCount: number | null;
   /** Tryb rozliczeń ustala admin; nauczyciel go nie widzi. */
   billingMode: BillingMode | null;
   /**
@@ -47,7 +45,6 @@ const BASE_SELECT = {
   parentPhone: true,
   parentEmail: true,
   languageLevel: true,
-  subject: true,
   status: true,
   teacherId: true,
   createdAt: true,
@@ -56,8 +53,8 @@ const BASE_SELECT = {
 
 const ADMIN_SELECT = {
   ...BASE_SELECT,
-  ratePerLesson: true,
   billingMode: true,
+  _count: { select: { rates: true } },
 } satisfies Prisma.StudentSelect;
 
 /** Admin dostaje stawkę ucznia; nauczyciel nie pobiera jej z bazy w ogóle. */
@@ -71,8 +68,8 @@ export function studentScope(actor: Actor): Prisma.StudentWhereInput {
 }
 
 type StudentRow = Prisma.StudentGetPayload<{ select: typeof BASE_SELECT }> & {
-  ratePerLesson?: Prisma.Decimal;
   billingMode?: BillingMode;
+  _count?: { rates: number };
 };
 
 function mapStudent(
@@ -91,16 +88,12 @@ function mapStudent(
     parentPhone: row.parentPhone,
     parentEmail: row.parentEmail,
     languageLevel: row.languageLevel,
-    subject: row.subject,
     status: row.status,
     teacherId: row.teacherId,
     teacherName: row.teacher
       ? `${row.teacher.firstName} ${row.teacher.lastName}`
       : null,
-    ratePerLesson:
-      actor.role === "ADMIN" && row.ratePerLesson !== undefined
-        ? toAmount(row.ratePerLesson)
-        : null,
+    rateCount: actor.role === "ADMIN" ? row._count?.rates ?? 0 : null,
     billingMode: actor.role === "ADMIN" ? row.billingMode ?? null : null,
     paymentFlag,
     createdAt: row.createdAt.toISOString(),
@@ -155,7 +148,6 @@ export async function getStudent(actor: Actor, id: string): Promise<StudentDto> 
   return mapStudent(row as StudentRow, actor, flags.get(row.id) ?? null);
 }
 
-const RATE_ONLY_ADMIN = "Stawkę ucznia ustala wyłącznie administrator.";
 const BILLING_ONLY_ADMIN = "Tryb rozliczeń ustala wyłącznie administrator.";
 
 async function assertTeacherExists(teacherId: string): Promise<void> {
@@ -173,21 +165,17 @@ export async function createStudent(
   const data = studentCreateSchema.parse(input);
 
   let teacherId: string | null;
-  let ratePerLesson: number;
 
   if (actor.role === "TEACHER") {
     // Nauczyciel dodaje uczniów wyłącznie do siebie i nie dotyka rozliczeń.
-    if (data.ratePerLesson !== undefined) throw new ForbiddenError(RATE_ONLY_ADMIN);
     if (data.billingMode !== undefined) throw new ForbiddenError(BILLING_ONLY_ADMIN);
     if (data.teacherId && data.teacherId !== actor.teacherProfileId) {
       throw new ForbiddenError("Możesz dodawać uczniów tylko do siebie.");
     }
     teacherId = actor.teacherProfileId;
-    ratePerLesson = 0; // stawkę uzupełni admin
   } else {
     teacherId = data.teacherId ?? null;
     if (teacherId) await assertTeacherExists(teacherId);
-    ratePerLesson = data.ratePerLesson ?? 0;
   }
 
   const created = await prisma.student.create({
@@ -200,10 +188,8 @@ export async function createStudent(
       parentPhone: data.parentPhone,
       parentEmail: data.parentEmail,
       languageLevel: data.languageLevel,
-      subject: data.subject,
       status: data.status,
       teacherId,
-      ratePerLesson: new Prisma.Decimal(ratePerLesson.toFixed(2)),
       ...(actor.role === "ADMIN" && data.billingMode
         ? { billingMode: data.billingMode }
         : {}),
@@ -236,19 +222,14 @@ export async function updateStudent(
   if (data.parentPhone !== undefined) update.parentPhone = data.parentPhone;
   if (data.parentEmail !== undefined) update.parentEmail = data.parentEmail;
   if (data.languageLevel !== undefined) update.languageLevel = data.languageLevel;
-  if (data.subject !== undefined) update.subject = data.subject;
   if (data.status !== undefined) update.status = data.status;
 
   if (actor.role === "TEACHER") {
-    if (data.ratePerLesson !== undefined) throw new ForbiddenError(RATE_ONLY_ADMIN);
     if (data.billingMode !== undefined) throw new ForbiddenError(BILLING_ONLY_ADMIN);
     if (data.teacherId !== undefined && data.teacherId !== actor.teacherProfileId) {
       throw new ForbiddenError("Nie możesz przepisać ucznia do innego nauczyciela.");
     }
   } else {
-    if (data.ratePerLesson !== undefined) {
-      update.ratePerLesson = new Prisma.Decimal(data.ratePerLesson.toFixed(2));
-    }
     if (data.billingMode !== undefined) update.billingMode = data.billingMode;
     if (data.teacherId !== undefined) {
       if (data.teacherId) {

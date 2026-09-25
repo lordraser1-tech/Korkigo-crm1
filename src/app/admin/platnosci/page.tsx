@@ -34,11 +34,15 @@ export default async function AdminPaymentsPage({
     listInvoices(actor, { state: "OPEN" }),
   ]);
 
-  const overdue = receivables.filter((row) => row.overdueAmount > 0);
-  const totalOverdue = overdue.reduce((sum, row) => sum + row.overdueAmount, 0);
+  const withArrears = receivables.filter((row) => row.arrears);
+  const totalArrears = withArrears.reduce(
+    (sum, row) => sum + Math.abs(Math.min(row.balance, 0)),
+    0
+  );
   const paidThisMonth = payments.reduce((sum, row) => sum + row.amount, 0);
-  const prepaidLow = receivables.filter(
-    (row) => row.prepaidRemaining !== null && row.prepaidRemaining <= 1
+  const unpaidLessons = receivables.reduce(
+    (sum, row) => sum + row.unpaidLessons,
+    0
   );
 
   return (
@@ -57,8 +61,8 @@ export default async function AdminPaymentsPage({
         />
         <StatCard
           label="Zaległości"
-          value={formatPLN(totalOverdue)}
-          hint={`${overdue.length} uczniów po terminie`}
+          value={formatPLN(totalArrears)}
+          hint={`${withArrears.length} uczniów z ujemnym saldem`}
         />
         <StatCard
           label="Rachunki do zapłaty"
@@ -66,9 +70,9 @@ export default async function AdminPaymentsPage({
           hint="nieopłacone lub częściowo"
         />
         <StatCard
-          label="Pakiety na wyczerpaniu"
-          value={String(prepaidLow.length)}
-          hint="została 1 lekcja lub mniej"
+          label="Lekcje nieopłacone"
+          value={String(unpaidLessons)}
+          hint="zrealizowane, bez pokrycia we wpłatach"
         />
       </div>
 
@@ -87,11 +91,11 @@ export default async function AdminPaymentsPage({
                     <tr>
                       <th className="px-4 py-2.5">Uczeń</th>
                       <th className="px-4 py-2.5">Tryb</th>
-                      <th className="px-4 py-2.5">Wystawiono</th>
+                      <th className="px-4 py-2.5">Naliczono</th>
                       <th className="px-4 py-2.5">Wpłacono</th>
                       <th className="px-4 py-2.5">Saldo</th>
-                      <th className="px-4 py-2.5">Zaległość</th>
-                      <th className="px-4 py-2.5">Pakiet</th>
+                      <th className="px-4 py-2.5">Po terminie</th>
+                      <th className="px-4 py-2.5">Lekcje bez opłaty</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -109,7 +113,10 @@ export default async function AdminPaymentsPage({
                           {BILLING_MODE_LABEL[row.billingMode]}
                         </td>
                         <td className="px-4 py-2.5 text-slate-600">
-                          {formatPLN(row.invoiced)}
+                          {formatPLN(row.charged)}
+                          <span className="block text-xs text-slate-400">
+                            rachunki: {formatPLN(row.invoiced)}
+                          </span>
                         </td>
                         <td className="px-4 py-2.5 text-slate-600">
                           {formatPLN(row.paid)}
@@ -136,16 +143,10 @@ export default async function AdminPaymentsPage({
                           )}
                         </td>
                         <td className="px-4 py-2.5">
-                          {row.prepaidRemaining === null ? (
-                            <span className="text-slate-400">—</span>
-                          ) : row.prepaidRemaining < 0 ? (
-                            <Badge tone="red">
-                              {Math.abs(row.prepaidRemaining)} ponad pakiet
-                            </Badge>
+                          {row.unpaidLessons === 0 ? (
+                            <Badge tone="green">wszystkie opłacone</Badge>
                           ) : (
-                            <Badge tone={row.prepaidRemaining <= 1 ? "amber" : "green"}>
-                              {row.prepaidRemaining} lekcji
-                            </Badge>
+                            <Badge tone="amber">{row.unpaidLessons}</Badge>
                           )}
                         </td>
                       </tr>

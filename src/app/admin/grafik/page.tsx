@@ -4,7 +4,9 @@ import { listTeachers } from "@/lib/services/teachers";
 import { listStudentOptions } from "@/lib/services/students";
 import { createAvailabilityAction } from "@/app/actions/teachers";
 import { ActionForm, Field, SelectField } from "@/components/forms";
-import { BookingForm } from "@/components/booking-form";
+import { LessonComposer } from "@/components/lesson-composer";
+import { getLessonComposerData } from "@/lib/services/subjects";
+import { createLessonsAction } from "@/app/actions/lessons";
 import { ScheduleWeek } from "@/components/schedule-week";
 import { WeekNav } from "@/components/week-nav";
 import { PageHeader, StatCard, WEEKDAY_LABEL } from "@/components/ui";
@@ -17,9 +19,10 @@ export default async function AdminSchedulePage({
   const actor = await requirePage("ADMIN");
   const { w, teacherId } = await searchParams;
 
-  const [schedule, teachers] = await Promise.all([
+  const [schedule, teachers, composer] = await Promise.all([
     getSchedule(actor, { weekKey: w, teacherId }),
     listTeachers(actor),
+    getLessonComposerData(actor),
   ]);
   const selected = teachers.find((teacher) => teacher.id === schedule.teacherId);
   const students = selected
@@ -108,13 +111,29 @@ export default async function AdminSchedulePage({
                 <p className="mb-4 text-xs text-slate-500">
                   Lekcja zostanie przypisana nauczycielowi {selected.fullName}.
                 </p>
-                <BookingForm
-                  students={students}
+                <LessonComposer
+                  action={createLessonsAction}
+                  subjects={composer.subjects.map((subject) => ({
+              id: subject.id,
+              name: subject.name,
+              levels: subject.levels.map((level) => ({
+                id: level.id,
+                name: level.name,
+              })),
+            }))}
+                  students={students.map((student) => ({
+                    id: student.id,
+                    fullName: student.fullName,
+                    teacherId: student.teacherId,
+                  }))}
+                  teacherRates={composer.teacherRates}
+                  studentRates={composer.studentRates}
+                  fixedTeacherId={selected.id}
                   slots={slots}
                   defaultWallClock={
                     slots[0]?.wallClock ?? `${schedule.weekKey}T16:00`
                   }
-                  teacherId={selected.id}
+                  submitLabel="Zapisz na lekcję"
                 />
               </div>
 

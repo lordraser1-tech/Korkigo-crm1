@@ -5,7 +5,12 @@
  * mogą wyciec do nauczyciela. Jedyny wyjątek to `getPaymentFlags()`, które
  * zwraca samą flagę „OK / zaległość”, bez żadnej kwoty i daty.
  */
-import { Prisma, type BillingMode, type PaymentMethod } from "@prisma/client";
+import {
+  Prisma,
+  type BillingMode,
+  type LessonStatus,
+  type PaymentMethod,
+} from "@prisma/client";
 import { z } from "zod";
 import type { Actor } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -18,6 +23,7 @@ import {
   wallClockToUtc,
 } from "@/lib/datetime";
 import { toAmount } from "@/lib/money";
+import { loadRateLookup, resolveLessonRates } from "@/lib/services/subjects";
 import {
   billingSettingsSchema,
   lessonInvoiceSchema,
@@ -442,8 +448,8 @@ async function loadStudentForBilling(studentId: string) {
       id: true,
       firstName: true,
       lastName: true,
-      ratePerLesson: true,
       billingMode: true,
+      teacherId: true,
     },
   });
   if (!student) throw new NotFoundError("Nie znaleziono ucznia.");
@@ -473,7 +479,14 @@ export async function createMonthlyInvoice(
       scheduledAt: { gte: from, lt: to },
       invoiceItem: { is: null },
     },
-    select: { id: true, scheduledAt: true },
+    select: {
+      id: true,
+      scheduledAt: true,
+      subjectLevelId: true,
+      subjectLevel: {
+        select: { name: true, subject: { select: { name: true } } },
+      },
+    },
     orderBy: { scheduledAt: "asc" },
   });
 
@@ -483,10 +496,22 @@ export async function createMonthlyInvoice(
     );
   }
 
-  const rate = toAmount(student.ratePerLesson);
-  if (rate <= 0) {
+  // Każda lekcja ma własną cenę — zależy od przedmiotu i poziomu.
+  const rates = await loadRateLookup({ studentIds: [student.id] });
+  const missing = lessons.filter(
+    (lesson) => rates.student(student.id, lesson.subjectLevelId) === null
+  );
+  if (missing.length > 0) {
+    const labels = [
+      ...new Set(
+        missing.map(
+          (lesson) =>
+            `${lesson.subjectLevel.subject.name} · ${lesson.subjectLevel.name}`
+        )
+      ),
+    ];
     throw new ValidationError(
-      "Uczeń nie ma ustalonej stawki — uzupełnij ją przed wystawieniem rachunku."
+      `Uczeń nie ma ustalonej ceny dla: ${labels.join(", ")}. Uzupełnij ją w zakładce Przedmioty.`
     );
   }
 
@@ -499,13 +524,16 @@ export async function createMonthlyInvoice(
     periodStart: from,
     periodEnd: new Date(to.getTime() - 1),
     note: data.note,
-    items: lessons.map((lesson) => ({
-      description: `Lekcja języka polskiego — ${lessonLabel(lesson.scheduledAt)}`,
-      quantity: 1,
-      unitPrice: rate,
-      amount: rate,
-      lessonId: lesson.id,
-    })),
+    items: lessons.map((lesson) => {
+      const price = rates.student(student.id, lesson.subjectLevelId) ?? 0;
+      return {
+        description: `${lesson.subjectLevel.subject.name} · ${lesson.subjectLevel.name} — ${lessonLabel(lesson.scheduledAt)}`,
+        quantity: 1,
+        unitPrice: price,
+        amount: price,
+        lessonId: lesson.id,
+      };
+    }),
   });
 }
 
@@ -522,8 +550,10 @@ export async function createLessonInvoice(
     select: {
       id: true,
       studentId: true,
+      teacherId: true,
       scheduledAt: true,
       status: true,
+      subjectLevelId: true,
       invoiceItem: { select: { id: true } },
     },
   });
@@ -538,12 +568,11 @@ export async function createLessonInvoice(
   }
 
   const student = await loadStudentForBilling(lesson.studentId);
-  const rate = toAmount(student.ratePerLesson);
-  if (rate <= 0) {
-    throw new ValidationError(
-      "Uczeń nie ma ustalonej stawki — uzupełnij ją przed wystawieniem rachunku."
-    );
-  }
+  const pricing = await resolveLessonRates({
+    teacherId: lesson.teacherId,
+    studentId: lesson.studentId,
+    subjectLevelId: lesson.subjectLevelId,
+  });
 
   const { issuedAt, dueAt } = await resolveDates(data.issuedAt, data.dueDays);
 
@@ -556,10 +585,10 @@ export async function createLessonInvoice(
     note: data.note,
     items: [
       {
-        description: `Lekcja języka polskiego — ${lessonLabel(lesson.scheduledAt)}`,
+        description: `${pricing.label} — ${lessonLabel(lesson.scheduledAt)}`,
         quantity: 1,
-        unitPrice: rate,
-        amount: rate,
+        unitPrice: pricing.studentAmount,
+        amount: pricing.studentAmount,
         lessonId: lesson.id,
       },
     ],
@@ -575,10 +604,25 @@ export async function createPackageInvoice(
   const data = packageInvoiceSchema.parse(input);
   const student = await loadStudentForBilling(data.studentId);
 
-  const unitPrice = data.unitPrice ?? toAmount(student.ratePerLesson);
-  if (unitPrice <= 0) {
+  // Pakiet dotyczy konkretnego przedmiotu/poziomu — stąd bierze się cena,
+  // chyba że admin poda własną.
+  let unitPrice = data.unitPrice ?? null;
+  let packageLabel = "";
+  if (data.subjectLevelId) {
+    const rates = await loadRateLookup({ studentIds: [student.id] });
+    const fromRate = rates.student(student.id, data.subjectLevelId);
+    const level = await prisma.subjectLevel.findUnique({
+      where: { id: data.subjectLevelId },
+      select: { name: true, subject: { select: { name: true } } },
+    });
+    if (!level) throw new ValidationError("Wybrany przedmiot/poziom nie istnieje.");
+    packageLabel = `${level.subject.name} · ${level.name}`;
+    if (unitPrice === null) unitPrice = fromRate;
+  }
+
+  if (unitPrice === null || unitPrice <= 0) {
     throw new ValidationError(
-      "Podaj cenę za lekcję albo uzupełnij stawkę ucznia."
+      "Podaj cenę za lekcję albo ustal cenę ucznia dla wybranego przedmiotu."
     );
   }
 
@@ -595,7 +639,7 @@ export async function createPackageInvoice(
       {
         description:
           data.description ??
-          `Pakiet lekcji języka polskiego — ${data.quantity} lekcji`,
+          `Pakiet ${packageLabel ? `— ${packageLabel} ` : ""}(${data.quantity} lekcji)`,
         quantity: data.quantity,
         unitPrice,
         amount: round(unitPrice * data.quantity),
@@ -744,75 +788,228 @@ export async function deletePayment(actor: Actor, id: string): Promise<void> {
   if (result.count === 0) throw new NotFoundError("Nie znaleziono wpłaty.");
 }
 
-// ---------- SALDA I ZALEGŁOŚCI ----------
+// ---------- SALDA, ZALEGŁOŚCI I STATUS LEKCJI ----------
 
 export type StudentBalanceDto = {
   studentId: string;
   studentName: string;
   billingMode: BillingMode;
+  /** Wartość lekcji zrealizowanych po cenach ucznia — to, co uczeń „zużył”. */
+  charged: number;
+  /** Suma wystawionych rachunków (bez anulowanych) — informacyjnie. */
   invoiced: number;
   paid: number;
-  /** Dodatnie saldo = nadpłata ucznia, ujemne = zaległość. */
+  /**
+   * `paid - charged`. Dodatnie = środki na koncie ucznia (np. reszta pakietu),
+   * ujemne = zaległość faktyczna. Liczone z LEKCJI, nie z rachunków — dzięki
+   * temu przekroczony pakiet widać od razu, a nie dopiero po wystawieniu
+   * kolejnego dokumentu.
+   */
   balance: number;
+  /** Kwota z rachunków po terminie płatności. */
   overdueAmount: number;
   oldestDueAt: string | null;
-  /** Tylko dla PREPAID: ile lekcji z pakietu zostało. */
-  prepaidRemaining: number | null;
+  /** Ile lekcji nie jest jeszcze opłaconych. */
+  unpaidLessons: number;
+  /** Czy pokazać alert: rachunek po terminie albo ujemne saldo. */
+  arrears: boolean;
 };
 
-type BalanceInput = {
+export type LessonPaymentState =
+  | "PAID"
+  | "PARTIAL"
+  | "UNPAID"
+  | "OVERDUE"
+  | "NOT_CHARGED";
+
+export type LessonPaymentInfo = {
+  state: LessonPaymentState;
+  /** Czy lekcja jest pokryta ze środków wpłaconych z góry. */
+  fromPackage: boolean;
+  /** Numer rachunku — wyłącznie dla admina; nauczyciel dostaje `null`. */
+  invoiceNumber: string | null;
+  invoiceId: string | null;
+};
+
+/** Statusy lekcji, które naliczają się uczniowi. */
+const CHARGEABLE: LessonStatus[] = ["COMPLETED", "NO_SHOW"];
+
+type LessonForBilling = {
+  id: string;
+  scheduledAt: Date;
+  status: LessonStatus;
+  price: number;
+  monthKey: string;
+};
+
+type StudentBillingState = {
   studentId: string;
   studentName: string;
   billingMode: BillingMode;
-  invoices: Array<{
-    totalAmount: number;
-    dueAt: Date;
-    status: "ISSUED" | "CANCELLED";
-    paid: number;
-    prepaidUnits: number;
-  }>;
-  payments: number;
-  unbilledCompletedLessons: number;
+  charged: number;
+  invoiced: number;
+  paid: number;
+  balance: number;
+  overdueAmount: number;
+  oldestDueAt: Date | null;
+  unpaidLessons: number;
+  lessonStates: Map<string, LessonPaymentInfo>;
 };
 
-function buildBalance(input: BalanceInput, now: Date): StudentBalanceDto {
+/**
+ * Jedno przejście po danych ucznia, z którego biorą się i saldo, i status
+ * każdej lekcji.
+ *
+ * Status liczy się od razu po odznaczeniu lekcji jako zrealizowanej —
+ * rachunek jest potrzebny jako dokument (druk, NDG), ale nie warunkuje tego,
+ * co widać w interfejsie. Reguły zależą od trybu rozliczeń:
+ *
+ * - PREPAID i PER_LESSON: wpłaty pokrywają lekcje chronologicznie, od
+ *   najstarszej; gdy środki się skończą, kolejne lekcje są nieopłacone,
+ * - POSTPAID: lekcje z danego miesiąca są nieopłacone, dopóki rachunek za ten
+ *   miesiąc nie zostanie opłacony w całości.
+ */
+function buildStudentBillingState(
+  input: {
+    studentId: string;
+    studentName: string;
+    billingMode: BillingMode;
+    lessons: LessonForBilling[];
+    payments: number[];
+    invoices: Array<{
+      id: string;
+      number: string;
+      totalAmount: number;
+      dueAt: Date;
+      status: "ISSUED" | "CANCELLED";
+      paid: number;
+      monthKeys: Set<string>;
+      lessonIds: Set<string>;
+    }>;
+  },
+  now: Date
+): StudentBillingState {
+  const lessons = [...input.lessons].sort(
+    (a, b) => a.scheduledAt.getTime() - b.scheduledAt.getTime()
+  );
+
+  const charged = round(
+    lessons
+      .filter((lesson) => CHARGEABLE.includes(lesson.status))
+      .reduce((sum, lesson) => sum + lesson.price, 0)
+  );
+  const paid = round(input.payments.reduce((sum, amount) => sum + amount, 0));
+
   let invoiced = 0;
   let overdueAmount = 0;
-  let prepaidUnits = 0;
   let oldestDueAt: Date | null = null;
-
   for (const invoice of input.invoices) {
     if (invoice.status === "CANCELLED") continue;
     invoiced += invoice.totalAmount;
-    prepaidUnits += invoice.prepaidUnits;
-
-    const balance = round(invoice.totalAmount - invoice.paid);
-    if (balance > 0.004 && invoice.dueAt < now) {
-      overdueAmount += balance;
+    const rest = round(invoice.totalAmount - invoice.paid);
+    if (rest > 0.004 && invoice.dueAt < now) {
+      overdueAmount += rest;
       if (!oldestDueAt || invoice.dueAt < oldestDueAt) oldestDueAt = invoice.dueAt;
     }
   }
+
+  const lessonStates = new Map<string, LessonPaymentInfo>();
+  const invoiceForLesson = new Map<string, (typeof input.invoices)[number]>();
+  for (const invoice of input.invoices) {
+    if (invoice.status === "CANCELLED") continue;
+    for (const lessonId of invoice.lessonIds) invoiceForLesson.set(lessonId, invoice);
+  }
+
+  let unpaidLessons = 0;
+  let pool = paid;
+
+  for (const lesson of lessons) {
+    if (lesson.status === "CANCELLED") {
+      lessonStates.set(lesson.id, {
+        state: "NOT_CHARGED",
+        fromPackage: false,
+        invoiceNumber: null,
+        invoiceId: null,
+      });
+      continue;
+    }
+
+    const invoice = invoiceForLesson.get(lesson.id);
+    const invoiceNumber = invoice?.number ?? null;
+    const invoiceId = invoice?.id ?? null;
+
+    if (input.billingMode === "POSTPAID") {
+      // Rachunek miesięczny decyduje o całym miesiącu.
+      const monthInvoice =
+        invoice ??
+        input.invoices.find(
+          (candidate) =>
+            candidate.status !== "CANCELLED" &&
+            candidate.monthKeys.has(lesson.monthKey)
+        );
+
+      let state: LessonPaymentState = "UNPAID";
+      if (monthInvoice) {
+        const rest = round(monthInvoice.totalAmount - monthInvoice.paid);
+        if (rest <= 0.004) state = "PAID";
+        else if (monthInvoice.dueAt < now) state = "OVERDUE";
+        else if (monthInvoice.paid > 0) state = "PARTIAL";
+      }
+      if (state !== "PAID" && CHARGEABLE.includes(lesson.status)) unpaidLessons += 1;
+
+      lessonStates.set(lesson.id, {
+        state,
+        fromPackage: false,
+        invoiceNumber: monthInvoice?.number ?? invoiceNumber,
+        invoiceId: monthInvoice?.id ?? invoiceId,
+      });
+      continue;
+    }
+
+    // PREPAID i PER_LESSON: wpłaty pokrywają lekcje po kolei.
+    let state: LessonPaymentState;
+    if (pool >= lesson.price - 0.004 && lesson.price > 0) {
+      pool = round(pool - lesson.price);
+      state = "PAID";
+    } else if (pool > 0.004) {
+      pool = 0;
+      state = "PARTIAL";
+    } else {
+      state = "UNPAID";
+    }
+
+    if (state !== "PAID" && CHARGEABLE.includes(lesson.status)) unpaidLessons += 1;
+
+    lessonStates.set(lesson.id, {
+      state,
+      fromPackage: input.billingMode === "PREPAID" && state !== "UNPAID",
+      invoiceNumber,
+      invoiceId,
+    });
+  }
+
+  const balance = round(paid - charged);
 
   return {
     studentId: input.studentId,
     studentName: input.studentName,
     billingMode: input.billingMode,
+    charged,
     invoiced: round(invoiced),
-    paid: round(input.payments),
-    balance: round(input.payments - invoiced),
+    paid,
+    balance,
     overdueAmount: round(overdueAmount),
-    oldestDueAt: oldestDueAt ? (oldestDueAt as Date).toISOString() : null,
-    prepaidRemaining:
-      input.billingMode === "PREPAID"
-        ? prepaidUnits - input.unbilledCompletedLessons
-        : null,
+    oldestDueAt,
+    unpaidLessons,
+    lessonStates,
   };
 }
 
-async function loadBalances(
+/** Wczytuje dane rozliczeniowe uczniów i składa z nich stan. */
+async function loadBillingStates(
   studentIds: string[] | null,
   now: Date
-): Promise<StudentBalanceDto[]> {
+): Promise<StudentBillingState[]> {
   const where: Prisma.StudentWhereInput = studentIds
     ? { id: { in: studentIds } }
     : {};
@@ -824,32 +1021,52 @@ async function loadBalances(
       firstName: true,
       lastName: true,
       billingMode: true,
-      invoices: {
+      lessons: {
         select: {
-          totalAmount: true,
-          dueAt: true,
+          id: true,
+          scheduledAt: true,
           status: true,
-          payments: { select: { amount: true } },
-          items: { select: { quantity: true, lessonId: true } },
+          subjectLevelId: true,
         },
       },
       payments: { select: { amount: true } },
-      _count: {
+      invoices: {
         select: {
-          lessons: { where: { status: "COMPLETED", invoiceItem: { is: null } } },
+          id: true,
+          number: true,
+          totalAmount: true,
+          dueAt: true,
+          status: true,
+          periodStart: true,
+          payments: { select: { amount: true } },
+          items: { select: { lessonId: true } },
         },
       },
     },
     orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
   });
 
+  const rates = await loadRateLookup({
+    studentIds: students.map((student) => student.id),
+  });
+
   return students.map((student) =>
-    buildBalance(
+    buildStudentBillingState(
       {
         studentId: student.id,
         studentName: `${student.firstName} ${student.lastName}`,
         billingMode: student.billingMode,
+        lessons: student.lessons.map((lesson) => ({
+          id: lesson.id,
+          scheduledAt: lesson.scheduledAt,
+          status: lesson.status,
+          price: rates.student(student.id, lesson.subjectLevelId) ?? 0,
+          monthKey: toWallClockInput(lesson.scheduledAt).slice(0, 7),
+        })),
+        payments: student.payments.map((payment) => toAmount(payment.amount)),
         invoices: student.invoices.map((invoice) => ({
+          id: invoice.id,
+          number: invoice.number,
           totalAmount: toAmount(invoice.totalAmount),
           dueAt: invoice.dueAt,
           status: invoice.status,
@@ -857,19 +1074,37 @@ async function loadBalances(
             (sum, payment) => sum + toAmount(payment.amount),
             0
           ),
-          prepaidUnits: invoice.items
-            .filter((item) => item.lessonId === null)
-            .reduce((sum, item) => sum + item.quantity, 0),
+          monthKeys: new Set(
+            invoice.periodStart
+              ? [toWallClockInput(invoice.periodStart).slice(0, 7)]
+              : []
+          ),
+          lessonIds: new Set(
+            invoice.items
+              .map((item) => item.lessonId)
+              .filter((id): id is string => id !== null)
+          ),
         })),
-        payments: student.payments.reduce(
-          (sum, payment) => sum + toAmount(payment.amount),
-          0
-        ),
-        unbilledCompletedLessons: student._count.lessons,
       },
       now
     )
   );
+}
+
+function toBalanceDto(state: StudentBillingState): StudentBalanceDto {
+  return {
+    studentId: state.studentId,
+    studentName: state.studentName,
+    billingMode: state.billingMode,
+    charged: state.charged,
+    invoiced: state.invoiced,
+    paid: state.paid,
+    balance: state.balance,
+    overdueAmount: state.overdueAmount,
+    oldestDueAt: state.oldestDueAt?.toISOString() ?? null,
+    unpaidLessons: state.unpaidLessons,
+    arrears: state.overdueAmount > 0.004 || state.balance < -0.004,
+  };
 }
 
 export async function listReceivables(
@@ -877,7 +1112,8 @@ export async function listReceivables(
   now = new Date()
 ): Promise<StudentBalanceDto[]> {
   assertAdmin(actor);
-  return loadBalances(null, now);
+  const states = await loadBillingStates(null, now);
+  return states.map(toBalanceDto);
 }
 
 export async function getStudentBalance(
@@ -886,9 +1122,9 @@ export async function getStudentBalance(
   now = new Date()
 ): Promise<StudentBalanceDto> {
   assertAdmin(actor);
-  const [balance] = await loadBalances([studentId], now);
-  if (!balance) throw new NotFoundError("Nie znaleziono ucznia.");
-  return balance;
+  const [state] = await loadBillingStates([studentId], now);
+  if (!state) throw new NotFoundError("Nie znaleziono ucznia.");
+  return toBalanceDto(state);
 }
 
 /** Rachunki i wpłaty jednego ucznia — sekcja rozliczeń w karcie ucznia. */
@@ -926,7 +1162,8 @@ export async function getPaymentFlags(
   studentIds: string[],
   now = new Date()
 ): Promise<Map<string, PaymentFlag>> {
-  if (studentIds.length === 0) return new Map();
+  const flags = new Map<string, PaymentFlag>();
+  if (studentIds.length === 0) return flags;
 
   const scope: Prisma.StudentWhereInput =
     actor.role === "ADMIN" ? {} : { teacherId: actor.teacherProfileId };
@@ -935,17 +1172,14 @@ export async function getPaymentFlags(
     where: { id: { in: studentIds }, ...scope },
     select: { id: true },
   });
-  const balances = await loadBalances(
+  const states = await loadBillingStates(
     allowed.map((student) => student.id),
     now
   );
 
-  const flags = new Map<string, PaymentFlag>();
-  for (const balance of balances) {
-    const overdue =
-      balance.overdueAmount > 0.004 ||
-      (balance.prepaidRemaining !== null && balance.prepaidRemaining < 0);
-    flags.set(balance.studentId, overdue ? "OVERDUE" : "OK");
+  for (const state of states) {
+    const balance = toBalanceDto(state);
+    flags.set(balance.studentId, balance.arrears ? "OVERDUE" : "OK");
   }
   return flags;
 }
@@ -956,6 +1190,8 @@ export type UnbilledLessonDto = {
   studentName: string;
   billingMode: BillingMode;
   scheduledAt: string;
+  subjectLabel: string;
+  /** Cena ucznia za tę lekcję; 0 oznacza brak ustalonej ceny. */
   amount: number;
 };
 
@@ -975,17 +1211,18 @@ export async function listUnbilledLessons(
       id: true,
       studentId: true,
       scheduledAt: true,
+      subjectLevelId: true,
+      subjectLevel: {
+        select: { name: true, subject: { select: { name: true } } },
+      },
       student: {
-        select: {
-          firstName: true,
-          lastName: true,
-          ratePerLesson: true,
-          billingMode: true,
-        },
+        select: { firstName: true, lastName: true, billingMode: true },
       },
     },
     orderBy: { scheduledAt: "asc" },
   });
+
+  const rates = await loadRateLookup();
 
   return rows.map((row) => ({
     lessonId: row.id,
@@ -993,28 +1230,19 @@ export async function listUnbilledLessons(
     studentName: `${row.student.firstName} ${row.student.lastName}`,
     billingMode: row.student.billingMode,
     scheduledAt: row.scheduledAt.toISOString(),
-    amount: toAmount(row.student.ratePerLesson),
+    subjectLabel: `${row.subjectLevel.subject.name} · ${row.subjectLevel.name}`,
+    amount: rates.student(row.studentId, row.subjectLevelId) ?? 0,
   }));
 }
 
 // ---------- STATUS PŁATNOŚCI POJEDYNCZEJ LEKCJI ----------
 
-export type LessonPaymentState = "PAID" | "UNPAID" | "OVERDUE" | "NOT_INVOICED";
-
-export type LessonPaymentInfo = {
-  state: LessonPaymentState;
-  /** Czy lekcja jest pokryta pakietem przedpłaconym. */
-  fromPackage: boolean;
-  /** Numer rachunku — wyłącznie dla admina; nauczyciel dostaje `null`. */
-  invoiceNumber: string | null;
-  invoiceId: string | null;
-};
-
-/** Statusy, które zużywają jednostkę pakietu (odwołana lekcja nie przepada). */
-const PACKAGE_CONSUMING = ["COMPLETED", "NO_SHOW", "SCHEDULED"] as const;
+// ---------- STATUS PŁATNOŚCI POJEDYNCZEJ LEKCJI ----------
 
 /**
- * Odpowiada na pytanie „za którą lekcję zapłacono?”.
+ * Odpowiada na pytanie „za którą lekcję zapłacono?”. Status liczy się na żywo
+ * z wpłat i lekcji (patrz `buildStudentBillingState`), a nie dopiero po
+ * wystawieniu rachunku.
  *
  * Nauczyciel dostaje sam status — bez kwot i numerów rachunków — i wyłącznie
  * dla swoich lekcji. Admin dodatkowo numer rachunku.
@@ -1033,134 +1261,24 @@ export async function getLessonPaymentStates(
 
   const lessons = await prisma.lesson.findMany({
     where: { id: { in: lessonIds }, ...scope },
-    select: {
-      id: true,
-      studentId: true,
-      student: { select: { billingMode: true } },
-      invoiceItem: {
-        select: {
-          invoice: {
-            select: {
-              id: true,
-              number: true,
-              status: true,
-              dueAt: true,
-              totalAmount: true,
-              payments: { select: { amount: true } },
-            },
-          },
-        },
-      },
-    },
+    select: { id: true, studentId: true },
   });
+  if (lessons.length === 0) return result;
 
-  const requested = new Set(lessonIds);
-  const prepaidStudentIds = new Set<string>();
+  const states = await loadBillingStates(
+    [...new Set(lessons.map((lesson) => lesson.studentId))],
+    now
+  );
+  const byStudent = new Map(states.map((state) => [state.studentId, state]));
 
   for (const lesson of lessons) {
-    if (lesson.student.billingMode === "PREPAID") {
-      prepaidStudentIds.add(lesson.studentId);
-      continue;
-    }
-
-    const invoice = lesson.invoiceItem?.invoice;
-    if (!invoice || invoice.status === "CANCELLED") {
-      result.set(lesson.id, {
-        state: "NOT_INVOICED",
-        fromPackage: false,
-        invoiceNumber: null,
-        invoiceId: null,
-      });
-      continue;
-    }
-
-    const paid = invoice.payments.reduce(
-      (sum, payment) => sum + toAmount(payment.amount),
-      0
-    );
-    const balance = round(toAmount(invoice.totalAmount) - paid);
-    const state: LessonPaymentState =
-      balance <= 0.004 ? "PAID" : invoice.dueAt < now ? "OVERDUE" : "UNPAID";
-
+    const info = byStudent.get(lesson.studentId)?.lessonStates.get(lesson.id);
+    if (!info) continue;
     result.set(lesson.id, {
-      state,
-      fromPackage: false,
-      invoiceNumber: showInvoiceNumbers ? invoice.number : null,
-      invoiceId: showInvoiceNumbers ? invoice.id : null,
+      ...info,
+      invoiceNumber: showInvoiceNumbers ? info.invoiceNumber : null,
+      invoiceId: showInvoiceNumbers ? info.invoiceId : null,
     });
   }
-
-  // Pakiety: jednostki przydzielamy chronologicznie — pierwsze lekcje zużywają
-  // to, co opłacone, kolejne to, co wystawione, reszta czeka na nowy pakiet.
-  for (const studentId of prepaidStudentIds) {
-    const invoices = await prisma.invoice.findMany({
-      where: { studentId, status: { not: "CANCELLED" } },
-      select: {
-        number: true,
-        id: true,
-        dueAt: true,
-        totalAmount: true,
-        payments: { select: { amount: true } },
-        items: { select: { quantity: true, lessonId: true } },
-      },
-      orderBy: { issuedAt: "asc" },
-    });
-
-    type Unit = { paid: boolean; overdue: boolean; number: string; id: string };
-    const units: Unit[] = [];
-    for (const invoice of invoices) {
-      const paid = invoice.payments.reduce(
-        (sum, payment) => sum + toAmount(payment.amount),
-        0
-      );
-      const settled = round(toAmount(invoice.totalAmount) - paid) <= 0.004;
-      const quantity = invoice.items
-        .filter((item) => item.lessonId === null)
-        .reduce((sum, item) => sum + item.quantity, 0);
-      for (let index = 0; index < quantity; index += 1) {
-        units.push({
-          paid: settled,
-          overdue: !settled && invoice.dueAt < now,
-          number: invoice.number,
-          id: invoice.id,
-        });
-      }
-    }
-
-    const studentLessons = await prisma.lesson.findMany({
-      where: { studentId, status: { in: [...PACKAGE_CONSUMING] } },
-      select: { id: true },
-      orderBy: { scheduledAt: "asc" },
-    });
-
-    studentLessons.forEach((lesson, index) => {
-      if (!requested.has(lesson.id)) return; // liczy się pozycja, nie zapis
-      const unit = units[index];
-      result.set(lesson.id, {
-        state: !unit
-          ? "NOT_INVOICED"
-          : unit.paid
-            ? "PAID"
-            : unit.overdue
-              ? "OVERDUE"
-              : "UNPAID",
-        fromPackage: Boolean(unit),
-        invoiceNumber: unit && showInvoiceNumbers ? unit.number : null,
-        invoiceId: unit && showInvoiceNumbers ? unit.id : null,
-      });
-    });
-  }
-
-  // Lekcje odwołane (i inne niezużywające pakietu) nie mają przypisanej jednostki.
-  for (const lesson of lessons) {
-    if (result.has(lesson.id)) continue;
-    result.set(lesson.id, {
-      state: "NOT_INVOICED",
-      fromPackage: false,
-      invoiceNumber: null,
-      invoiceId: null,
-    });
-  }
-
   return result;
 }

@@ -27,6 +27,7 @@ model User {
 
   teacherProfile TeacherProfile?
   sentMessages   Message[]
+  speakingClubs  SpeakingClubUse[]
 
   @@map("users")
 }
@@ -38,11 +39,10 @@ model TeacherProfile {
   userId String @unique
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  firstName     String
-  lastName      String
-  phone         String?
-  level         String? // np. "C1", uprawnienia/certyfikaty
-  ratePerLesson Decimal @db.Decimal(10, 2) // stawka WYPŁACANA nauczycielowi — ustala tylko admin
+  firstName String
+  lastName  String
+  phone     String?
+  level     String? // np. "C1", uprawnienia/certyfikaty
 
   active    Boolean  @default(true)
   createdAt DateTime @default(now())
@@ -52,6 +52,7 @@ model TeacherProfile {
   lessons        Lesson[]
   availabilities Availability[]
   messages       MessageRecipient[]
+  rates          TeacherRate[]
 
   @@map("teacher_profiles")
 }
@@ -90,9 +91,7 @@ model Student {
   parentPhone String?
   parentEmail String?
 
-  languageLevel String? // np. "A2"
-  subject       String? // np. "Polski ogólny", "Polski maturalny"
-  ratePerLesson Decimal @db.Decimal(10, 2) // stawka PŁACONA przez ucznia — NIGDY nie zwracaj w API dla roli TEACHER
+  languageLevel String? // np. "A2" — poziom językowy ucznia, opisowy
 
   status      StudentStatus @default(ACTIVE)
   billingMode BillingMode   @default(POSTPAID) // jak ten uczeń płaci
@@ -108,8 +107,100 @@ model Student {
   knowledgeBase KnowledgeBaseEntry[]
   invoices      Invoice[]
   payments      Payment[]
+  rates         StudentRate[]
+  speakingClubs SpeakingClubUse[]
 
   @@map("students")
+}
+
+// ---------- PRZEDMIOTY, POZIOMY I STAWKI ----------
+
+/// Przedmiot (np. „Polski”, „Matematyka”). Listę tworzy admin.
+model Subject {
+  id     String  @id @default(cuid())
+  name   String  @unique
+  active Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  levels SubjectLevel[]
+
+  @@map("subjects")
+}
+
+/// Poziom w ramach przedmiotu (np. „Podstawowy”, „Maturalny”).
+/// Liczba poziomów jest dowolna — nie ma sztywnej listy.
+model SubjectLevel {
+  id        String  @id @default(cuid())
+  subjectId String
+  subject   Subject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  name      String
+  active    Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  lessons      Lesson[]
+  teacherRates TeacherRate[]
+  studentRates StudentRate[]
+
+  @@unique([subjectId, name])
+  @@map("subject_levels")
+}
+
+/// Stawka WYPŁACANA nauczycielowi za lekcję z danego przedmiotu/poziomu.
+/// Ustala wyłącznie admin.
+model TeacherRate {
+  id             String         @id @default(cuid())
+  teacherId      String
+  teacher        TeacherProfile @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  subjectLevelId String
+  subjectLevel   SubjectLevel   @relation(fields: [subjectLevelId], references: [id], onDelete: Cascade)
+
+  amount Decimal @db.Decimal(10, 2)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([teacherId, subjectLevelId])
+  @@map("teacher_rates")
+}
+
+/// Cena PŁACONA przez ucznia za lekcję z danego przedmiotu/poziomu —
+/// indywidualna dla każdego ucznia. NIGDY nie zwracaj jej w API dla roli TEACHER.
+model StudentRate {
+  id             String       @id @default(cuid())
+  studentId      String
+  student        Student      @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  subjectLevelId String
+  subjectLevel   SubjectLevel @relation(fields: [subjectLevelId], references: [id], onDelete: Cascade)
+
+  amount Decimal @db.Decimal(10, 2)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([studentId, subjectLevelId])
+  @@map("student_rates")
+}
+
+/// Wykorzystany darmowy Speaking Club. Liczba przysługujących wynika
+/// z liczby lekcji zrealizowanych; ten model zapisuje zużycia.
+model SpeakingClubUse {
+  id        String  @id @default(cuid())
+  studentId String
+  student   Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  usedAt     DateTime @default(now())
+  markedById String
+  markedBy   User     @relation(fields: [markedById], references: [id])
+  note       String?
+
+  createdAt DateTime @default(now())
+
+  @@index([studentId])
+  @@map("speaking_club_uses")
 }
 
 // ---------- KALENDARZ LEKCJI ----------
@@ -134,6 +225,9 @@ model Lesson {
 
   teacherId String
   teacher   TeacherProfile @relation(fields: [teacherId], references: [id])
+
+  subjectLevelId String
+  subjectLevel   SubjectLevel @relation(fields: [subjectLevelId], references: [id])
 
   scheduledAt     DateTime
   durationMinutes Int      @default(60)

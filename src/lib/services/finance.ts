@@ -2,7 +2,7 @@ import type { Actor } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { ForbiddenError, NotFoundError } from "@/lib/errors";
 import { monthRange } from "@/lib/datetime";
-import { toAmount } from "@/lib/money";
+import { loadRateLookup } from "@/lib/services/subjects";
 
 export type EarningsRow = {
   studentId: string;
@@ -11,22 +11,31 @@ export type EarningsRow = {
   amount: number;
 };
 
+export type SubjectEarningsRow = {
+  subjectLevelId: string;
+  label: string;
+  completedLessons: number;
+  amount: number;
+};
+
 export type TeacherEarnings = {
   teacherId: string;
   teacherName: string;
   monthKey: string;
-  ratePerLesson: number;
   completedLessons: number;
   cancelledLessons: number;
   noShowLessons: number;
   scheduledLessons: number;
   total: number;
   byStudent: EarningsRow[];
+  /** Rozbicie na przedmioty/poziomy — stawka bywa inna dla każdego z nich. */
+  bySubject: SubjectEarningsRow[];
 };
 
 /**
- * Zarobki nauczyciela = liczba lekcji ZREALIZOWANYCH × jego własna stawka.
- * Stawki ucznia ta funkcja nie dotyka w ogóle — także dla admina.
+ * Zarobki nauczyciela: suma jego stawek za lekcje ZREALIZOWANE. Stawka bywa
+ * inna dla każdego przedmiotu/poziomu, więc liczymy lekcja po lekcji.
+ * Cen ucznia ta funkcja nie dotyka w ogóle — także dla admina.
  */
 export async function getTeacherEarnings(
   actor: Actor,
@@ -39,7 +48,7 @@ export async function getTeacherEarnings(
 
   const teacher = await prisma.teacherProfile.findUnique({
     where: { id: teacherId },
-    select: { id: true, firstName: true, lastName: true, ratePerLesson: true },
+    select: { id: true, firstName: true, lastName: true },
   });
   if (!teacher) throw new NotFoundError("Nie znaleziono nauczyciela.");
 
@@ -49,12 +58,18 @@ export async function getTeacherEarnings(
     select: {
       status: true,
       studentId: true,
+      subjectLevelId: true,
+      subjectLevel: {
+        select: { name: true, subject: { select: { name: true } } },
+      },
       student: { select: { firstName: true, lastName: true } },
     },
   });
 
-  const rate = toAmount(teacher.ratePerLesson);
+  const rates = await loadRateLookup({ teacherIds: [teacherId] });
   const byStudent = new Map<string, EarningsRow>();
+  const bySubject = new Map<string, SubjectEarningsRow>();
+  let total = 0;
   let completed = 0;
   let cancelled = 0;
   let noShow = 0;
@@ -67,6 +82,11 @@ export async function getTeacherEarnings(
     if (lesson.status !== "COMPLETED") continue;
 
     completed += 1;
+    // Brak stawki (np. skasowanej po fakcie) liczymy jako zero, żeby widok
+    // się nie wysypał — admin i tak zobaczy zaniżoną kwotę i ją uzupełni.
+    const amount = rates.teacher(teacherId, lesson.subjectLevelId) ?? 0;
+    total += amount;
+
     const name = `${lesson.student.firstName} ${lesson.student.lastName}`;
     const row = byStudent.get(lesson.studentId) ?? {
       studentId: lesson.studentId,
@@ -75,22 +95,35 @@ export async function getTeacherEarnings(
       amount: 0,
     };
     row.completedLessons += 1;
-    row.amount = Number((row.completedLessons * rate).toFixed(2));
+    row.amount = Number((row.amount + amount).toFixed(2));
     byStudent.set(lesson.studentId, row);
+
+    const label = `${lesson.subjectLevel.subject.name} · ${lesson.subjectLevel.name}`;
+    const subjectRow = bySubject.get(lesson.subjectLevelId) ?? {
+      subjectLevelId: lesson.subjectLevelId,
+      label,
+      completedLessons: 0,
+      amount: 0,
+    };
+    subjectRow.completedLessons += 1;
+    subjectRow.amount = Number((subjectRow.amount + amount).toFixed(2));
+    bySubject.set(lesson.subjectLevelId, subjectRow);
   }
 
   return {
     teacherId: teacher.id,
     teacherName: `${teacher.firstName} ${teacher.lastName}`,
     monthKey,
-    ratePerLesson: rate,
     completedLessons: completed,
     cancelledLessons: cancelled,
     noShowLessons: noShow,
     scheduledLessons: scheduled,
-    total: Number((completed * rate).toFixed(2)),
+    total: Number(total.toFixed(2)),
     byStudent: [...byStudent.values()].sort((a, b) =>
       a.studentName.localeCompare(b.studentName, "pl")
+    ),
+    bySubject: [...bySubject.values()].sort((a, b) =>
+      a.label.localeCompare(b.label, "pl")
     ),
   };
 }
@@ -117,8 +150,9 @@ export type AdminFinanceSummary = {
  * Zestawienie dla admina: przychód (stawki uczniów) minus koszt (stawki
  * nauczycieli) za lekcje zrealizowane w danym miesiącu.
  *
- * Faza 1 liczy po AKTUALNYCH stawkach — historia zmian stawek dojdzie razem
- * z płatnościami w fazie 2.
+ * Liczymy po AKTUALNYCH stawkach z `TeacherRate` i `StudentRate`. Kwoty na
+ * wystawionych rachunkach są już utrwalone w pozycjach, więc zmiana cennika
+ * nie rusza dokumentów wydanych uczniom.
  */
 export async function getAdminFinanceSummary(
   actor: Actor,
@@ -133,20 +167,23 @@ export async function getAdminFinanceSummary(
     where: { status: "COMPLETED", scheduledAt: { gte: from, lt: to } },
     select: {
       teacherId: true,
-      student: { select: { ratePerLesson: true } },
-      teacher: {
-        select: { firstName: true, lastName: true, ratePerLesson: true },
-      },
+      studentId: true,
+      subjectLevelId: true,
+      teacher: { select: { firstName: true, lastName: true } },
     },
   });
+
+  const rates = await loadRateLookup();
 
   const perTeacher = new Map<string, AdminTeacherRow>();
   let revenue = 0;
   let cost = 0;
 
   for (const lesson of lessons) {
-    const studentRate = toAmount(lesson.student.ratePerLesson);
-    const teacherRate = toAmount(lesson.teacher.ratePerLesson);
+    const studentRate =
+      rates.student(lesson.studentId, lesson.subjectLevelId) ?? 0;
+    const teacherRate =
+      rates.teacher(lesson.teacherId, lesson.subjectLevelId) ?? 0;
     revenue += studentRate;
     cost += teacherRate;
 

@@ -126,7 +126,7 @@ export async function getSchedule(
   const withPayments: ScheduleLesson[] = lessons.map((lesson) => ({
     ...lesson,
     payment: payments.get(lesson.id) ?? {
-      state: "NOT_INVOICED",
+      state: "UNPAID",
       fromPackage: false,
       invoiceNumber: null,
       invoiceId: null,

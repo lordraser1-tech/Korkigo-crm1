@@ -60,9 +60,10 @@ export function PaymentFlagBadge({ flag }: { flag: PaymentFlag | null }) {
 
 const LESSON_PAYMENT_LABEL: Record<LessonPaymentState, string> = {
   PAID: "Opłacona",
-  UNPAID: "Do zapłaty",
+  PARTIAL: "Częściowo",
+  UNPAID: "Nieopłacona",
   OVERDUE: "Po terminie",
-  NOT_INVOICED: "Bez rachunku",
+  NOT_CHARGED: "Nienaliczana",
 };
 
 /**
@@ -76,15 +77,16 @@ export function LessonPaymentBadge({
 }) {
   const tone = {
     PAID: "green",
+    PARTIAL: "amber",
     UNPAID: "amber",
     OVERDUE: "red",
-    NOT_INVOICED: "slate",
+    NOT_CHARGED: "slate",
   }[payment.state] as "green" | "amber" | "red" | "slate";
 
   const label =
     payment.fromPackage && payment.state === "PAID"
       ? "Z pakietu"
-      : payment.fromPackage && payment.state !== "NOT_INVOICED"
+      : payment.fromPackage
         ? `Pakiet — ${LESSON_PAYMENT_LABEL[payment.state].toLowerCase()}`
         : LESSON_PAYMENT_LABEL[payment.state];
 

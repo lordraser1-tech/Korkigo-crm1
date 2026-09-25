@@ -1,6 +1,5 @@
 import Link from "next/link";
 import type { StudentDto } from "@/lib/services/students";
-import { formatPLN } from "@/lib/money";
 import { PaymentFlagBadge } from "@/components/billing";
 import { EmptyState, StudentStatusBadge } from "@/components/ui";
 
@@ -26,10 +25,10 @@ export function StudentTable({
         <thead className="table-head">
           <tr>
             <th className="px-4 py-2.5">Uczeń</th>
-            <th className="px-4 py-2.5">Poziom / przedmiot</th>
+            <th className="px-4 py-2.5">Poziom</th>
             <th className="px-4 py-2.5">Kontakt</th>
             {showTeacher ? <th className="px-4 py-2.5">Nauczyciel</th> : null}
-            {showRate ? <th className="px-4 py-2.5">Stawka ucznia</th> : null}
+            {showRate ? <th className="px-4 py-2.5">Ceny</th> : null}
             <th className="px-4 py-2.5">Rozliczenia</th>
             <th className="px-4 py-2.5">Status</th>
           </tr>
@@ -46,9 +45,7 @@ export function StudentTable({
                 </Link>
               </td>
               <td className="px-4 py-2.5 text-slate-600">
-                {[student.languageLevel, student.subject]
-                  .filter(Boolean)
-                  .join(" • ") || "—"}
+                {student.languageLevel ?? "—"}
               </td>
               <td className="px-4 py-2.5 text-slate-600">
                 {student.contactPhone ?? student.contactEmail ?? "—"}
@@ -59,12 +56,13 @@ export function StudentTable({
                 </td>
               ) : null}
               {showRate ? (
-                <td className="px-4 py-2.5 font-medium text-slate-900">
-                  {student.ratePerLesson === null ||
-                  student.ratePerLesson === 0 ? (
-                    <span className="text-amber-700">do ustalenia</span>
+                <td className="px-4 py-2.5">
+                  {(student.rateCount ?? 0) === 0 ? (
+                    <span className="font-medium text-amber-700">do ustalenia</span>
                   ) : (
-                    formatPLN(student.ratePerLesson)
+                    <span className="text-slate-600">
+                      {student.rateCount} ustalonych
+                    </span>
                   )}
                 </td>
               ) : null}

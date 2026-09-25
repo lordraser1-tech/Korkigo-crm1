@@ -4,7 +4,9 @@ import { listAvailability } from "@/lib/services/teachers";
 import { listStudentOptions } from "@/lib/services/students";
 import { createAvailabilityAction } from "@/app/actions/teachers";
 import { ActionForm, Field, SelectField } from "@/components/forms";
-import { BookingForm } from "@/components/booking-form";
+import { LessonComposer } from "@/components/lesson-composer";
+import { getLessonComposerData } from "@/lib/services/subjects";
+import { createLessonsAction } from "@/app/actions/lessons";
 import { ScheduleWeek } from "@/components/schedule-week";
 import { WeekNav } from "@/components/week-nav";
 import { PageHeader, StatCard, WEEKDAY_LABEL } from "@/components/ui";
@@ -17,10 +19,11 @@ export default async function TeacherSchedulePage({
   const actor = await requirePage("TEACHER");
   const { w } = await searchParams;
 
-  const [schedule, students, availability] = await Promise.all([
+  const [schedule, students, availability, composer] = await Promise.all([
     getSchedule(actor, { weekKey: w }),
     listStudentOptions(actor),
     listAvailability(actor),
+    getLessonComposerData(actor),
   ]);
 
   const firstSlot = schedule.days.flatMap((day) => day.freeSlots)[0];
@@ -73,10 +76,26 @@ export default async function TeacherSchedulePage({
               Lista podpowiada wolne godziny z Twojej dyspozycyjności w tym
               tygodniu.
             </p>
-            <BookingForm
-              students={students}
+            <LessonComposer
+              action={createLessonsAction}
+              subjects={composer.subjects.map((subject) => ({
+              id: subject.id,
+              name: subject.name,
+              levels: subject.levels.map((level) => ({
+                id: level.id,
+                name: level.name,
+              })),
+            }))}
+              students={students.map((student) => ({
+                id: student.id,
+                fullName: student.fullName,
+                teacherId: student.teacherId,
+              }))}
+              teacherRates={composer.teacherRates}
+              fixedTeacherId={actor.teacherProfileId}
               slots={schedule.days.flatMap((day) => day.freeSlots)}
               defaultWallClock={firstSlot?.wallClock ?? `${schedule.weekKey}T16:00`}
+              submitLabel="Zapisz na lekcję"
             />
           </div>
 

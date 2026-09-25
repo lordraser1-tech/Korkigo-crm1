@@ -23,6 +23,7 @@ import {
 } from "@/lib/datetime";
 import { toAmount } from "@/lib/money";
 import { ndgLimitSchema, ndgSettingsSchema } from "@/lib/validation";
+import { loadRateLookup } from "@/lib/services/subjects";
 
 const ADMIN_ONLY = "Moduł NDG jest dostępny tylko dla administratora.";
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -567,9 +568,8 @@ export async function getFinancialStats(
       where: { status: "COMPLETED", scheduledAt: { gte: from, lt: to } },
       select: {
         teacherId: true,
-        teacher: {
-          select: { firstName: true, lastName: true, ratePerLesson: true },
-        },
+        subjectLevelId: true,
+        teacher: { select: { firstName: true, lastName: true } },
       },
     }),
     prisma.student.count({ where: { status: "ACTIVE" } }),
@@ -605,9 +605,10 @@ export async function getFinancialStats(
     }
   }
 
+  const rates = await loadRateLookup();
   let cost = 0;
   for (const lesson of lessons) {
-    const rate = toAmount(lesson.teacher.ratePerLesson);
+    const rate = rates.teacher(lesson.teacherId, lesson.subjectLevelId) ?? 0;
     cost += rate;
     const row = ensureRow(
       lesson.teacherId,
