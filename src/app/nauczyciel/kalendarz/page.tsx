@@ -10,7 +10,9 @@ import {
 import { LessonComposer } from "@/components/lesson-composer";
 import { getLessonComposerData } from "@/lib/services/subjects";
 import { createLessonsAction } from "@/app/actions/lessons";
+import { CalendarView } from "@/components/calendar-view";
 import { LessonList } from "@/components/lesson-list";
+import { LessonMonth } from "@/components/lesson-month";
 import { MonthNav } from "@/components/month-nav";
 import { PageHeader } from "@/components/ui";
 
@@ -44,11 +46,22 @@ export default async function TeacherCalendarPage({
 
       <div className="grid gap-6 lg:grid-cols-[1fr_340px]">
         <div>
-          <LessonList
-            lessons={lessons}
-            payments={payments}
-            studentHrefBase="/nauczyciel/uczniowie"
-            emptyText="Brak lekcji w tym miesiącu."
+          <CalendarView
+            list={
+              <LessonList
+                lessons={lessons}
+                payments={payments}
+                studentHrefBase="/nauczyciel/uczniowie"
+                emptyText="Brak lekcji w tym miesiącu."
+              />
+            }
+            month={
+              <LessonMonth
+                monthKey={monthKey}
+                lessons={lessons}
+                payments={payments}
+              />
+            }
           />
         </div>
         <div className="card h-fit p-5">

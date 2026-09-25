@@ -3,6 +3,9 @@
 import { requireActor } from "@/lib/auth";
 import {
   changeOwnPassword,
+  clearAvailabilityDay,
+  copyAvailabilityToMonth,
+  copyAvailabilityWeek,
   createAvailability,
   createTeacher,
   deleteAvailability,
@@ -82,18 +85,11 @@ export async function changeOwnPasswordAction(
   }
 }
 
-export async function createAvailabilityAction(
-  _prev: ActionState,
-  formData: FormData
-): Promise<ActionState> {
-  try {
-    const actor = await requireActor();
-    await createAvailability(actor, formToObject(formData) as never);
-    revalidatePanels();
-    return { ok: true, message: "Dodano okno dyspozycyjności." };
-  } catch (error) {
-    return toActionState(error);
-  }
+/** Wersja dla zwykłego formularza (bez stanu) — używana w edytorze dni. */
+export async function createAvailabilityAction(formData: FormData): Promise<void> {
+  const actor = await requireActor();
+  await createAvailability(actor, formToObject(formData) as never);
+  revalidatePanels();
 }
 
 export async function deleteAvailabilityAction(formData: FormData): Promise<void> {
@@ -102,4 +98,51 @@ export async function deleteAvailabilityAction(formData: FormData): Promise<void
   if (typeof id !== "string") throw new Error("Brak identyfikatora wpisu.");
   await deleteAvailability(actor, id);
   revalidatePanels();
+}
+
+export async function clearAvailabilityDayAction(
+  formData: FormData
+): Promise<void> {
+  const actor = await requireActor();
+  const date = formData.get("date");
+  const teacherId = formData.get("teacherId");
+  if (typeof date !== "string") throw new Error("Brak dnia.");
+  await clearAvailabilityDay(actor, {
+    date,
+    teacherId: typeof teacherId === "string" ? teacherId : null,
+  });
+  revalidatePanels();
+}
+
+/** „Powtórz z zeszłego tygodnia” — kopiuje układ okien na wskazany tydzień. */
+export async function copyAvailabilityWeekAction(
+  _prev: ActionState,
+  formData: FormData
+): Promise<ActionState> {
+  try {
+    const actor = await requireActor();
+    const count = await copyAvailabilityWeek(actor, formToObject(formData) as never);
+    revalidatePanels();
+    return { ok: true, message: `Skopiowano ${count} okien na ten tydzień.` };
+  } catch (error) {
+    return toActionState(error);
+  }
+}
+
+/** „Skopiuj na cały miesiąc” — powiela układ tygodnia na wszystkie tygodnie. */
+export async function copyAvailabilityMonthAction(
+  _prev: ActionState,
+  formData: FormData
+): Promise<ActionState> {
+  try {
+    const actor = await requireActor();
+    const count = await copyAvailabilityToMonth(
+      actor,
+      formToObject(formData) as never
+    );
+    revalidatePanels();
+    return { ok: true, message: `Skopiowano ${count} okien na cały miesiąc.` };
+  } catch (error) {
+    return toActionState(error);
+  }
 }

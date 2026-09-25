@@ -3,6 +3,7 @@
 import { requireActor } from "@/lib/auth";
 import {
   cancelInvoice,
+  createInvoiceForOutstandingLessons,
   createLessonInvoice,
   createMonthlyInvoice,
   createPackageInvoice,
@@ -68,6 +69,29 @@ export async function createPackageInvoiceAction(
     return {
       ok: true,
       message: `Wystawiono rachunek ${invoice.number} za pakiet (${invoice.totalAmount.toFixed(2)} zł).`,
+    };
+  } catch (error) {
+    return toActionState(error);
+  }
+}
+
+/** Rachunek dokładnie na te lekcje, które widać w karcie jako nieopłacone. */
+export async function createOutstandingInvoiceAction(
+  _prev: ActionState,
+  formData: FormData
+): Promise<ActionState> {
+  try {
+    const actor = await requireActor();
+    const studentId = formData.get("studentId");
+    if (typeof studentId !== "string") throw new Error("Brak ucznia.");
+    const invoice = await createInvoiceForOutstandingLessons(actor, {
+      studentId,
+      note: (formData.get("note") as string) || undefined,
+    });
+    revalidatePanels();
+    return {
+      ok: true,
+      message: `Wystawiono rachunek ${invoice.number} na ${invoice.totalAmount.toFixed(2)} zł (${invoice.items.length} lekcji).`,
     };
   } catch (error) {
     return toActionState(error);

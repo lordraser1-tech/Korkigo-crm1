@@ -1,23 +1,23 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requirePage } from "@/lib/auth";
-import { getTeacher, listAvailability } from "@/lib/services/teachers";
+import { getTeacher } from "@/lib/services/teachers";
 import { getTeacherRates } from "@/lib/services/subjects";
+import { getPayoutDue, listPayouts } from "@/lib/services/payouts";
+import { TeacherPayoutCard } from "@/components/teacher-payout-card";
 import { RateEditor } from "@/components/rate-editor";
 import { listStudents } from "@/lib/services/students";
 import { getTeacherEarnings } from "@/lib/services/finance";
 import { NotFoundError } from "@/lib/errors";
 import {
-  createAvailabilityAction,
-  deleteAvailabilityAction,
   resetTeacherPasswordAction,
   updateTeacherAction,
 } from "@/app/actions/teachers";
-import { ActionForm, ConfirmButton, Field, SelectField } from "@/components/forms";
+import { ActionForm, Field, SelectField } from "@/components/forms";
 import { StudentTable } from "@/components/student-table";
 import { currentMonthKey, formatMonthLabel } from "@/lib/datetime";
 import { formatPLN } from "@/lib/money";
-import { PageHeader, StatCard, WEEKDAY_LABEL } from "@/components/ui";
+import { PageHeader, StatCard } from "@/components/ui";
 
 export default async function AdminTeacherPage({
   params,
@@ -33,11 +33,12 @@ export default async function AdminTeacherPage({
   });
 
   const monthKey = currentMonthKey();
-  const [students, availability, earnings, rates] = await Promise.all([
+  const [students, earnings, rates, payoutDue, payouts] = await Promise.all([
     listStudents(actor, { teacherId: teacher.id }),
-    listAvailability(actor, teacher.id),
     getTeacherEarnings(actor, teacher.id, monthKey),
     getTeacherRates(actor, teacher.id),
+    getPayoutDue(actor, teacher.id),
+    listPayouts(actor, teacher.id),
   ]);
 
   return (
@@ -85,6 +86,12 @@ export default async function AdminTeacherPage({
               </div>
               <Field label="Telefon" name="phone" defaultValue={teacher.phone} />
               <Field label="Poziom / certyfikaty" name="level" defaultValue={teacher.level} />
+              <Field
+                label="Numer konta bankowego"
+                name="bankAccount"
+                defaultValue={teacher.bankAccount}
+                hint="Do wypłat."
+              />
 
               <SelectField
                 label="Status konta"
@@ -131,55 +138,27 @@ export default async function AdminTeacherPage({
           </div>
 
           <div className="card p-5">
-            <h2 className="mb-4 text-base font-semibold text-slate-900">
+            <h2 className="mb-1 text-base font-semibold text-slate-900">
               Dyspozycyjność
             </h2>
-            {availability.length > 0 ? (
-              <ul className="mb-4 space-y-2">
-                {availability.map((slot) => (
-                  <li
-                    key={slot.id}
-                    className="flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2 text-sm"
-                  >
-                    <span>
-                      <span className="font-medium">{WEEKDAY_LABEL[slot.dayOfWeek]}</span>{" "}
-                      <span className="text-slate-600">
-                        {slot.startTime}–{slot.endTime}
-                      </span>
-                    </span>
-                    <form action={deleteAvailabilityAction}>
-                      <input type="hidden" name="id" value={slot.id} />
-                      <ConfirmButton message="Usunąć to okno dyspozycyjności?">
-                        Usuń
-                      </ConfirmButton>
-                    </form>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="mb-4 text-sm text-slate-500">Brak zdefiniowanych okien.</p>
-            )}
-            <ActionForm
-              action={createAvailabilityAction}
-              submitLabel="Dodaj okno"
-              resetOnSuccess
-            >
-              <input type="hidden" name="teacherId" value={teacher.id} />
-              <SelectField
-                label="Dzień tygodnia"
-                name="dayOfWeek"
-                defaultValue="1"
-                options={WEEKDAY_LABEL.map((label, index) => ({
-                  value: String(index),
-                  label,
-                }))}
-              />
-              <div className="grid grid-cols-2 gap-3">
-                <Field label="Od" name="startTime" type="time" defaultValue="16:00" required />
-                <Field label="Do" name="endTime" type="time" defaultValue="20:00" required />
-              </div>
-            </ActionForm>
+            <p className="text-sm text-slate-600">
+              Okna ustawiasz na konkretne dni w{" "}
+              <Link
+                href={`/admin/grafik?teacherId=${teacher.id}`}
+                className="font-medium text-brand-700 hover:underline"
+              >
+                Grafiku
+              </Link>
+              .
+            </p>
           </div>
+
+          <TeacherPayoutCard
+            teacherId={teacher.id}
+            bankAccount={teacher.bankAccount}
+            due={payoutDue}
+            payouts={payouts}
+          />
         </div>
 
         <section>

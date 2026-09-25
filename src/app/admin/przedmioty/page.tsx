@@ -14,6 +14,7 @@ import {
 } from "@/app/actions/subjects";
 import { ActionForm, ConfirmButton, Field, SelectField } from "@/components/forms";
 import { RateMatrix } from "@/components/rate-matrix";
+import { SearchFilter } from "@/components/search-filter";
 import { Badge, EmptyState, PageHeader } from "@/components/ui";
 
 export default async function AdminSubjectsPage() {
@@ -123,7 +124,13 @@ export default async function AdminSubjectsPage() {
               Kwota wypłacana za zrealizowaną lekcję. Puste pole = brak stawki,
               czyli blokada zapisu lekcji z tej kombinacji.
             </p>
-            <RateMatrix kind="teacher" levels={teacherMatrix.levels} rows={teacherMatrix.rows} />
+            <SearchFilter label="Szukaj nauczyciela" placeholder="imię lub nazwisko">
+              <RateMatrix
+                kind="teacher"
+                levels={teacherMatrix.levels}
+                rows={teacherMatrix.rows}
+              />
+            </SearchFilter>
           </section>
 
           <section>
@@ -134,11 +141,13 @@ export default async function AdminSubjectsPage() {
               Cena płacona przez ucznia — indywidualna, per przedmiot i poziom.
               Nauczyciel jej nie widzi.
             </p>
-            <RateMatrix
-              kind="student"
-              levels={studentMatrix.levels}
-              rows={studentMatrix.rows}
-            />
+            <SearchFilter label="Szukaj ucznia" placeholder="imię lub nazwisko">
+              <RateMatrix
+                kind="student"
+                levels={studentMatrix.levels}
+                rows={studentMatrix.rows}
+              />
+            </SearchFilter>
           </section>
         </div>
 

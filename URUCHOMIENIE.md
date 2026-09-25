@@ -91,6 +91,11 @@ node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
 Zostaw też `SEED_ADMIN_EMAIL` i `SEED_ADMIN_PASSWORD` — to dane konta
 administratora, którym się zalogujesz.
 
+Reszty zmiennych z `.env.example` (`CRON_SECRET`, `TELEGRAM_*`, `SMS_*`) do
+testów na własnym komputerze **nie musisz uzupełniać** — dotyczą wysyłki
+przypomnień i przydadzą się dopiero na produkcji. Bez nich aplikacja działa
+normalnie, a próba wysyłki zapisuje w bazie czytelny błąd zamiast się wywalać.
+
 ---
 
 ## 6. Przygotuj bazę i wgraj dane testowe
@@ -141,10 +146,22 @@ stawek uczniów ani danych Piotra, a administrator widzi wszystko.
   „Drukuj”, wydruk zawiera sam dokument.
 - **Panel admina → Wiadomości** — wyślij coś do wszystkich; w panelu
   nauczyciela przy „Wiadomości” zapali się czerwona kropka.
-- **Panel nauczyciela → Grafik i dyspozycja** — dodaj okno dyspozycyjności,
-  zapisz ucznia na wolny termin, wpisz temat zajęć przy lekcji.
-- **Panel nauczyciela → Moje wypłaty** — zarobki liczone z lekcji
-  zrealizowanych.
+- **Panel nauczyciela → Grafik i dyspozycja** — dodaj okno dyspozycyjności na
+  konkretny dzień, a potem kliknij „Powtórz z zeszłego tygodnia” albo
+  „Skopiuj ten tydzień na cały miesiąc”; zapisz ucznia na wolny termin
+  i wpisz temat zajęć przy lekcji.
+- **Kalendarz lekcji** — przełącznik „Lista / Miesiąc” nad listą; wybór
+  zostaje zapamiętany w przeglądarce.
+- **Odwołanie lekcji** — rozwiń „Odwołaj lekcję” przy dowolnej lekcji i cofnij
+  datę zgłoszenia: procent naliczenia zmienia się na oczach (24 h → 0%,
+  12–24 h → 50%, mniej → 100%). Korektę kwoty zobaczysz tylko jako admin.
+- **Panel admina → karta ucznia** — kafelek „Rozliczenia” pokazuje lekcje bez
+  rachunku i wystawia rachunek dokładnie na nie; niżej filtry historii lekcji
+  (zaplanowane / nieopłacone / opłacone).
+- **Panel admina → Rozliczenia** — rejestr wypłat: ile komu się należy;
+  wypłatę oznaczasz w karcie nauczyciela.
+- **Panel nauczyciela → Moje wypłaty** — kwota oczekująca i historia wypłat
+  (bez informacji, kto je oznaczył).
 
 ---
 

@@ -7,6 +7,7 @@ import type {
 } from "@/lib/services/billing";
 import {
   createMonthlyInvoiceAction,
+  createOutstandingInvoiceAction,
   createPackageInvoiceAction,
 } from "@/app/actions/billing";
 import { ActionForm, Field, SelectField } from "@/components/forms";
@@ -31,9 +32,12 @@ export function StudentBillingCard({
     invoices: InvoiceDto[];
     payments: PaymentDto[];
     unbilledLessons: number;
+    /** Wartość lekcji naliczonych, które nie trafiły na żaden rachunek. */
+    outstandingAmount: number;
   };
 }) {
-  const { balance, invoices, payments, unbilledLessons } = billing;
+  const { balance, invoices, payments, unbilledLessons, outstandingAmount } =
+    billing;
 
   return (
     <div className="card p-5">
@@ -80,6 +84,28 @@ export function StudentBillingCard({
           </p>
         </div>
       </div>
+
+      {unbilledLessons > 0 ? (
+        <div className="mb-5 rounded-lg border border-amber-200 bg-amber-50 p-4">
+          <p className="mb-1 text-sm font-medium text-amber-900">
+            {unbilledLessons}{" "}
+            {unbilledLessons === 1 ? "lekcja" : "lekcji"} bez rachunku —{" "}
+            {formatPLN(outstandingAmount)}
+          </p>
+          <p className="mb-3 text-xs text-amber-800">
+            Lekcje zrealizowane, nieobecności i odwołania z naliczoną opłatą,
+            które nie trafiły jeszcze na żaden rachunek.
+          </p>
+          <ActionForm
+            action={createOutstandingInvoiceAction}
+            submitLabel="Wystaw rachunek za te lekcje"
+            className="space-y-3"
+          >
+            <input type="hidden" name="studentId" value={studentId} />
+            <Field label="Uwagi na rachunku" name="note" />
+          </ActionForm>
+        </div>
+      ) : null}
 
       {balance.overdueAmount > 0 ? (
         <p className="mb-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">

@@ -99,21 +99,24 @@ export async function getSchedule(
   const teacherId = resolveScope(actor, options.teacherId);
   const { from, to } = weekRange(weekKey);
 
-  const availabilityWhere: Prisma.AvailabilityWhereInput = teacherId
-    ? { teacherId }
-    : {};
+  // Dyspozycyjność jest teraz per konkretny dzień, więc pobieramy ją zakresem
+  // tygodnia zamiast wzorca dnia tygodnia.
+  const availabilityWhere: Prisma.AvailabilitySlotWhereInput = {
+    date: { gte: from, lt: to },
+    ...(teacherId ? { teacherId } : {}),
+  };
   const [windows, lessons] = await Promise.all([
-    prisma.availability.findMany({
+    prisma.availabilitySlot.findMany({
       where: availabilityWhere,
       select: {
         id: true,
         teacherId: true,
-        dayOfWeek: true,
+        date: true,
         startTime: true,
         endTime: true,
         teacher: { select: { firstName: true, lastName: true, active: true } },
       },
-      orderBy: [{ dayOfWeek: "asc" }, { startTime: "asc" }],
+      orderBy: [{ date: "asc" }, { startTime: "asc" }],
     }),
     listLessons(actor, { from, to, teacherId }),
   ]);
@@ -137,7 +140,11 @@ export async function getSchedule(
 
   const days: ScheduleDay[] = weekDays(weekKey).map(({ dateKey, dayOfWeek }) => {
     const dayWindows: ScheduleWindow[] = windows
-      .filter((window) => window.dayOfWeek === dayOfWeek && window.teacher.active)
+      .filter(
+        (window) =>
+          toWallClockInput(window.date).slice(0, 10) === dateKey &&
+          window.teacher.active
+      )
       .map((window) => ({
         id: window.id,
         teacherId: window.teacherId,
@@ -228,20 +235,24 @@ export async function getSchedule(
 }
 
 /** Pełny przegląd dyspozycyjności wszystkich nauczycieli — tylko admin. */
-export async function listAllAvailability(actor: Actor): Promise<ScheduleWindow[]> {
+export async function listAllAvailability(
+  actor: Actor,
+  range?: { from: Date; to: Date }
+): Promise<ScheduleWindow[]> {
   if (actor.role !== "ADMIN") {
     throw new ForbiddenError("Dyspozycyjność wszystkich widzi tylko administrator.");
   }
-  const rows = await prisma.availability.findMany({
+  const rows = await prisma.availabilitySlot.findMany({
+    where: range ? { date: { gte: range.from, lt: range.to } } : {},
     select: {
       id: true,
       teacherId: true,
       startTime: true,
       endTime: true,
-      dayOfWeek: true,
+      date: true,
       teacher: { select: { firstName: true, lastName: true } },
     },
-    orderBy: [{ dayOfWeek: "asc" }, { startTime: "asc" }],
+    orderBy: [{ date: "asc" }, { startTime: "asc" }],
   });
   return rows.map((row) => ({
     id: row.id,

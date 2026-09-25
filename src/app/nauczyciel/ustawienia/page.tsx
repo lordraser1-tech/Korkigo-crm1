@@ -1,21 +1,19 @@
+import Link from "next/link";
 import { requirePage } from "@/lib/auth";
-import { getMyTeacherProfile, listAvailability } from "@/lib/services/teachers";
+import { getMyTeacherProfile } from "@/lib/services/teachers";
 import { getTeacherRates } from "@/lib/services/subjects";
 import {
   changeOwnPasswordAction,
-  createAvailabilityAction,
-  deleteAvailabilityAction,
   updateTeacherAction,
 } from "@/app/actions/teachers";
-import { ActionForm, ConfirmButton, Field, SelectField } from "@/components/forms";
+import { ActionForm, Field } from "@/components/forms";
 import { formatPLN } from "@/lib/money";
-import { PageHeader, WEEKDAY_LABEL } from "@/components/ui";
+import { PageHeader } from "@/components/ui";
 
 export default async function TeacherSettingsPage() {
   const actor = await requirePage("TEACHER");
-  const [profile, availability, rates] = await Promise.all([
+  const [profile, rates] = await Promise.all([
     getMyTeacherProfile(actor),
-    listAvailability(actor),
     getTeacherRates(actor, actor.teacherProfileId),
   ]);
 
@@ -41,6 +39,13 @@ export default async function TeacherSettingsPage() {
               name="level"
               defaultValue={profile.level}
               placeholder="np. C1, certyfikat glottodydaktyczny"
+            />
+            <Field
+              label="Numer konta bankowego"
+              name="bankAccount"
+              defaultValue={profile.bankAccount}
+              placeholder="PL00 0000 0000 0000 0000 0000 0000"
+              hint="Do wypłat. Widzisz go tylko Ty i administrator."
             />
           </ActionForm>
           <div className="mt-5 rounded-lg bg-slate-50 p-4">
@@ -79,59 +84,16 @@ export default async function TeacherSettingsPage() {
             <h2 className="mb-1 text-base font-semibold text-slate-900">
               Dyspozycyjność
             </h2>
-            <p className="mb-4 text-xs text-slate-500">
-              Powtarzalne okna, w których możesz prowadzić lekcje. Widok
-              tygodnia i zapisy uczniów znajdziesz w zakładce „Grafik
-              i dyspozycja”.
+            <p className="text-sm text-slate-600">
+              Dyspozycyjność ustawiasz teraz na konkretne dni, w zakładce{" "}
+              <Link
+                href="/nauczyciel/grafik"
+                className="font-medium text-brand-700 hover:underline"
+              >
+                Grafik i dyspozycja
+              </Link>
+              .
             </p>
-
-            {availability.length > 0 ? (
-              <ul className="mb-4 space-y-2">
-                {availability.map((slot) => (
-                  <li
-                    key={slot.id}
-                    className="flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2 text-sm"
-                  >
-                    <span>
-                      <span className="font-medium">{WEEKDAY_LABEL[slot.dayOfWeek]}</span>{" "}
-                      <span className="text-slate-600">
-                        {slot.startTime}–{slot.endTime}
-                      </span>
-                    </span>
-                    <form action={deleteAvailabilityAction}>
-                      <input type="hidden" name="id" value={slot.id} />
-                      <ConfirmButton message="Usunąć to okno dyspozycyjności?">
-                        Usuń
-                      </ConfirmButton>
-                    </form>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="mb-4 text-sm text-slate-500">
-                Nie masz jeszcze zdefiniowanych okien.
-              </p>
-            )}
-
-            <ActionForm
-              action={createAvailabilityAction}
-              submitLabel="Dodaj okno"
-              resetOnSuccess
-            >
-              <SelectField
-                label="Dzień tygodnia"
-                name="dayOfWeek"
-                defaultValue="1"
-                options={WEEKDAY_LABEL.map((label, index) => ({
-                  value: String(index),
-                  label,
-                }))}
-              />
-              <div className="grid grid-cols-2 gap-3">
-                <Field label="Od" name="startTime" type="time" defaultValue="16:00" required />
-                <Field label="Do" name="endTime" type="time" defaultValue="20:00" required />
-              </div>
-            </ActionForm>
           </div>
 
           <div className="card p-5">

@@ -28,6 +28,7 @@ model User {
   teacherProfile TeacherProfile?
   sentMessages   Message[]
   speakingClubs  SpeakingClubUse[]
+  payouts        Payout[]
 
   @@map("users")
 }
@@ -44,30 +45,40 @@ model TeacherProfile {
   phone     String?
   level     String? // np. "C1", uprawnienia/certyfikaty
 
+  /// Numer konta do wypłat. Widzi go właściciel konta i admin — nikt inny.
+  bankAccount String?
+
   active    Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   students       Student[]
   lessons        Lesson[]
-  availabilities Availability[]
+  availabilities AvailabilitySlot[]
   messages       MessageRecipient[]
   rates          TeacherRate[]
+  payouts        Payout[]
 
   @@map("teacher_profiles")
 }
 
-// Dyspozycyjność — powtarzalne okna czasowe (grafik dyspozycji)
-model Availability {
+/// Dyspozycyjność na KONKRETNY dzień (nie wzorzec tygodniowy).
+/// Kopiowanie na kolejne dni robi warstwa aplikacji, nie schemat.
+model AvailabilitySlot {
   id        String         @id @default(cuid())
   teacherId String
   teacher   TeacherProfile @relation(fields: [teacherId], references: [id], onDelete: Cascade)
 
-  dayOfWeek Int // 0 = niedziela ... 6 = sobota
+  /// Konkretny dzień — północ czasu warszawskiego (konwersja w `datetime.ts`).
+  date      DateTime
   startTime String // "16:00"
   endTime   String // "20:00"
 
-  @@map("availabilities")
+  createdAt DateTime @default(now())
+
+  @@unique([teacherId, date, startTime])
+  @@index([teacherId, date])
+  @@map("availability_slots")
 }
 
 // ---------- UCZNIOWIE ----------
@@ -81,10 +92,20 @@ enum StudentStatus {
 model Student {
   id String @id @default(cuid())
 
-  firstName    String
-  lastName     String
-  contactEmail String?
-  contactPhone String?
+  firstName        String
+  lastName         String
+  contactEmail     String?
+  contactPhone     String?
+  contactInstagram String?
+  contactTelegram  String?
+
+  /// Stały link do pokoju (Google Meet / Zoom). Widoczny też dla nauczyciela —
+  /// to nie jest kwota, więc nie łamie zasady ukrywania cen.
+  meetingLink String?
+
+  /// Ustawiany automatycznie po połączeniu konta przez bota; nigdy ręcznie.
+  telegramChatId  String?         @unique
+  reminderChannel ReminderChannel @default(NONE)
 
   // Dane rodzica/opiekuna (jeśli niepełnoletni)
   parentName  String?
@@ -102,13 +123,14 @@ model Student {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  lessons       Lesson[]
-  notes         LessonNote[]
-  knowledgeBase KnowledgeBaseEntry[]
-  invoices      Invoice[]
-  payments      Payment[]
-  rates         StudentRate[]
-  speakingClubs SpeakingClubUse[]
+  lessons        Lesson[]
+  notes          LessonNote[]
+  knowledgeBase  KnowledgeBaseEntry[]
+  invoices       Invoice[]
+  payments       Payment[]
+  rates          StudentRate[]
+  speakingClubs  SpeakingClubUse[]
+  telegramTokens TelegramLinkToken[]
 
   @@map("students")
 }
@@ -241,6 +263,23 @@ model Lesson {
   /// model `LessonNote` z fazy 2.
   topic String?
 
+  /// Kiedy uczeń ZGŁOSIŁ odwołanie (nie kiedy kliknięto w systemie) — od tego
+  /// liczy się próg 24h/12h z regulaminu.
+  cancelledReportedAt    DateTime?
+  /// Kwota wynikająca z regulaminu (do audytu korekt).
+  cancellationAutoAmount Decimal?  @db.Decimal(10, 2)
+  /// Kwota faktycznie naliczona uczniowi (po ewentualnej korekcie admina).
+  cancellationAmount     Decimal?  @db.Decimal(10, 2)
+  /// Powód korekty — wymagany, gdy kwota różni się od wyliczonej.
+  cancellationNote       String?
+
+  /// Lekcja odczepiona od serii edycją „tylko ta” — zbiorcze zmiany jej nie ruszają.
+  detachedFromSeries Boolean @default(false)
+
+  /// W której wypłacie lekcja została rozliczona z nauczycielem.
+  teacherPayoutId String?
+  teacherPayout   Payout? @relation(fields: [teacherPayoutId], references: [id])
+
   googleEventId String? // zarezerwowane pod przyszłą synchronizację z Google Calendar
 
   createdAt DateTime @default(now())
@@ -248,6 +287,7 @@ model Lesson {
 
   note        LessonNote?
   invoiceItem InvoiceItem? // lekcja może trafić tylko na jeden rachunek
+  reminders   ReminderLog[]
 
   @@map("lessons")
 }
@@ -487,6 +527,78 @@ model MessageRecipient {
   @@unique([messageId, teacherId])
   @@index([teacherId, readAt])
   @@map("message_recipients")
+}
+
+// ---------- WYPŁATY DLA NAUCZYCIELI ----------
+
+/// Zarejestrowana wypłata. Lekcje rozliczone tą wypłatą wskazują na nią
+/// przez `Lesson.teacherPayoutId`, więc „ile się należy” liczy tylko te,
+/// które jeszcze do żadnej nie trafiły.
+model Payout {
+  id        String         @id @default(cuid())
+  teacherId String
+  teacher   TeacherProfile @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+
+  amount Decimal  @db.Decimal(10, 2)
+  paidAt DateTime @default(now())
+
+  paidById String
+  paidBy   User   @relation(fields: [paidById], references: [id])
+
+  note String?
+
+  createdAt DateTime @default(now())
+
+  lessons Lesson[]
+
+  @@index([teacherId, paidAt])
+  @@map("payouts")
+}
+
+// ---------- PRZYPOMNIENIA ----------
+
+enum ReminderChannel {
+  NONE
+  TELEGRAM
+  SMS
+}
+
+enum ReminderStatus {
+  SENT
+  FAILED
+}
+
+/// Ślad po wysłanym przypomnieniu — także nieudanym, żeby cron nie próbował
+/// w kółko, a admin miał co sprawdzić.
+model ReminderLog {
+  id       String @id @default(cuid())
+  lessonId String
+  lesson   Lesson @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+
+  channel ReminderChannel
+  status  ReminderStatus
+  sentAt  DateTime        @default(now())
+  error   String?
+
+  /// Jedno przypomnienie na lekcję, niezależnie od kanału.
+  @@unique([lessonId])
+  @@index([sentAt])
+  @@map("reminder_logs")
+}
+
+/// Jednorazowy token do połączenia konta Telegram ucznia z botem.
+model TelegramLinkToken {
+  id        String  @id @default(cuid())
+  token     String  @unique
+  studentId String
+  student   Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime  @default(now())
+  expiresAt DateTime
+  usedAt    DateTime?
+
+  @@index([studentId])
+  @@map("telegram_link_tokens")
 }
 
 // ---------- ZAREZERWOWANE NA KOLEJNE FAZY ----------

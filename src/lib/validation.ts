@@ -40,6 +40,10 @@ export const studentCreateSchema = z.object({
     { message: "Podaj poprawny adres e-mail opiekuna." }
   ),
   languageLevel: optionalText(20),
+  meetingLink: optionalText(300),
+  contactInstagram: optionalText(120),
+  contactTelegram: optionalText(120),
+  reminderChannel: z.enum(["NONE", "TELEGRAM", "SMS"]).optional(),
   status: studentStatusSchema.default("ACTIVE"),
   // Tryb rozliczeń może ustawić WYŁĄCZNIE admin — serwis odrzuci go dla nauczyciela.
   // Ceny ucznia żyją osobno, per przedmiot/poziom (StudentRate).
@@ -63,6 +67,7 @@ export const teacherUpdateSchema = z.object({
   lastName: trimmed.min(1).max(80).optional(),
   phone: optionalText(40).optional(),
   level: optionalText(60).optional(),
+  bankAccount: optionalText(60).optional(),
   active: z.boolean().optional(),
 });
 
@@ -102,16 +107,6 @@ export const lessonUpdateSchema = z.object({
   scheduledAt: wallClock.optional(),
   durationMinutes: z.coerce.number().int().min(15).max(480).optional(),
   status: lessonStatusSchema.optional(),
-});
-
-export const availabilitySchema = z.object({
-  teacherId: optionalText(40),
-  dayOfWeek: z.coerce.number().int().min(0).max(6),
-  startTime: trimmed.regex(/^\d{2}:\d{2}$/, "Godzina w formacie 16:00."),
-  endTime: trimmed.regex(/^\d{2}:\d{2}$/, "Godzina w formacie 20:00."),
-}).refine((v) => v.startTime < v.endTime, {
-  message: "Godzina zakończenia musi być późniejsza niż rozpoczęcia.",
-  path: ["endTime"],
 });
 
 export const changePasswordSchema = z
@@ -285,4 +280,72 @@ export const studentRateSchema = rateSchema.extend({
 export const speakingClubUseSchema = z.object({
   studentId: trimmed.min(1, "Wskaż ucznia."),
   note: optionalText(200),
+});
+
+// ---------- ODWOŁANIA, SERIE, WYPŁATY, PRZYPOMNIENIA ----------
+
+const wallClockOptional = z
+  .union([
+    trimmed.regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/, "Podaj datę i godzinę."),
+    z.literal(""),
+    z.null(),
+    z.undefined(),
+  ])
+  .transform((v) => (v === "" || v === null || v === undefined ? null : v));
+
+export const cancelLessonSchema = z.object({
+  /** Kiedy uczeń ZGŁOSIŁ odwołanie; puste = teraz. */
+  reportedAt: wallClockOptional,
+  /** Korekta kwoty — wyłącznie admin. */
+  amount: z
+    .union([z.literal(""), z.null(), z.undefined(), amountSchema])
+    .transform((v) => (v === "" || v === null || v === undefined ? null : v)),
+  note: optionalText(300),
+});
+
+export const lessonScopeSchema = z.enum(["ONE", "FUTURE"]).default("ONE");
+
+export const payoutSchema = z.object({
+  teacherId: trimmed.min(1, "Wskaż nauczyciela."),
+  amount: amountSchema.refine((v) => v > 0, {
+    message: "Kwota wypłaty musi być większa od zera.",
+  }),
+  paidAt: z
+    .union([
+      trimmed.regex(/^\d{4}-\d{2}-\d{2}$/, "Podaj datę w formacie RRRR-MM-DD."),
+      z.literal(""),
+      z.null(),
+      z.undefined(),
+    ])
+    .transform((v) => (v === "" || v === null || v === undefined ? null : v)),
+  note: optionalText(300),
+});
+
+export const availabilitySlotSchema = z
+  .object({
+    teacherId: optionalText(40),
+    date: trimmed.regex(/^\d{4}-\d{2}-\d{2}$/, "Podaj dzień w formacie RRRR-MM-DD."),
+    startTime: trimmed.regex(/^\d{2}:\d{2}$/, "Godzina w formacie 16:00."),
+    endTime: trimmed.regex(/^\d{2}:\d{2}$/, "Godzina w formacie 20:00."),
+  })
+  .refine((v) => v.startTime < v.endTime, {
+    message: "Godzina zakończenia musi być późniejsza niż rozpoczęcia.",
+    path: ["endTime"],
+  });
+
+export const copyAvailabilitySchema = z.object({
+  teacherId: optionalText(40),
+  /** Tydzień źródłowy (poniedziałek) w formacie RRRR-MM-DD. */
+  sourceWeek: trimmed.regex(/^\d{4}-\d{2}-\d{2}$/, "Podaj tydzień źródłowy."),
+  targetWeek: trimmed.regex(/^\d{4}-\d{2}-\d{2}$/, "Podaj tydzień docelowy."),
+});
+
+export const copyWeekToMonthSchema = z.object({
+  teacherId: optionalText(40),
+  sourceWeek: trimmed.regex(/^\d{4}-\d{2}-\d{2}$/, "Podaj tydzień źródłowy."),
+  month: monthKeySchema,
+});
+
+export const studentReminderSchema = z.object({
+  reminderChannel: z.enum(["NONE", "TELEGRAM", "SMS"]),
 });

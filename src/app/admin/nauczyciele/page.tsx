@@ -3,6 +3,7 @@ import { requirePage } from "@/lib/auth";
 import { listTeachers } from "@/lib/services/teachers";
 import { createTeacherAction } from "@/app/actions/teachers";
 import { ActionForm, Field } from "@/components/forms";
+import { SearchFilter } from "@/components/search-filter";
 import { Badge, EmptyState, PageHeader } from "@/components/ui";
 
 export default async function AdminTeachersPage() {
@@ -20,66 +21,83 @@ export default async function AdminTeachersPage() {
         <div>
           {teachers.length === 0 ? (
             <EmptyState>
-              Nie ma jeszcze żadnego nauczyciela. Utwórz pierwsze konto po prawej.
+              Nie ma jeszcze żadnego nauczyciela. Utwórz pierwsze konto po
+              prawej.
             </EmptyState>
           ) : (
-            <div className="card overflow-x-auto">
-              <table className="w-full min-w-[640px] text-sm">
-                <thead className="table-head">
-                  <tr>
-                    <th className="px-4 py-2.5">Nauczyciel</th>
-                    <th className="px-4 py-2.5">E-mail</th>
-                    <th className="px-4 py-2.5">Poziom</th>
-                    <th className="px-4 py-2.5">Uczniowie</th>
-                    <th className="px-4 py-2.5">Stawki</th>
-                    <th className="px-4 py-2.5">Status</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {teachers.map((teacher) => (
-                    <tr key={teacher.id} className="hover:bg-slate-50">
-                      <td className="px-4 py-2.5">
-                        <Link
-                          href={`/admin/nauczyciele/${teacher.id}`}
-                          className="font-medium text-brand-700 hover:underline"
-                        >
-                          {teacher.fullName}
-                        </Link>
-                      </td>
-                      <td className="px-4 py-2.5 text-slate-600">{teacher.email}</td>
-                      <td className="px-4 py-2.5 text-slate-600">
-                        {teacher.level ?? "—"}
-                      </td>
-                      <td className="px-4 py-2.5 text-slate-600">
-                        {teacher.studentCount}
-                      </td>
-                      <td className="px-4 py-2.5">
-                        {teacher.rateCount === 0 ? (
-                          <Link
-                            href="/admin/przedmioty"
-                            className="font-medium text-amber-700 underline"
-                          >
-                            brak stawek
-                          </Link>
-                        ) : (
-                          <span className="text-slate-600">
-                            {teacher.rateCount}{" "}
-                            {teacher.rateCount === 1 ? "stawka" : "ustalonych"}
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-4 py-2.5">
-                        {teacher.active ? (
-                          <Badge tone="green">Aktywny</Badge>
-                        ) : (
-                          <Badge tone="slate">Nieaktywny</Badge>
-                        )}
-                      </td>
+            <SearchFilter placeholder="imię, nazwisko, e-mail lub poziom">
+              <div className="card overflow-x-auto">
+                <table className="w-full min-w-[640px] text-sm">
+                  <thead className="table-head">
+                    <tr>
+                      <th className="px-4 py-2.5">Nauczyciel</th>
+                      <th className="px-4 py-2.5">E-mail</th>
+                      <th className="px-4 py-2.5">Poziom</th>
+                      <th className="px-4 py-2.5">Uczniowie</th>
+                      <th className="px-4 py-2.5">Stawki</th>
+                      <th className="px-4 py-2.5">Status</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {teachers.map((teacher) => (
+                      <tr
+                        key={teacher.id}
+                        className="hover:bg-slate-50"
+                        data-search={[
+                          teacher.fullName,
+                          teacher.email,
+                          teacher.level,
+                        ]
+                          .filter(Boolean)
+                          .join(" ")}
+                      >
+                        <td className="px-4 py-2.5">
+                          <Link
+                            href={`/admin/nauczyciele/${teacher.id}`}
+                            className="font-medium text-brand-700 hover:underline"
+                          >
+                            {teacher.fullName}
+                          </Link>
+                        </td>
+                        <td className="px-4 py-2.5 text-slate-600">
+                          {teacher.email}
+                        </td>
+                        <td className="px-4 py-2.5 text-slate-600">
+                          {teacher.level ?? "—"}
+                        </td>
+                        <td className="px-4 py-2.5 text-slate-600">
+                          {teacher.studentCount}
+                        </td>
+                        <td className="px-4 py-2.5">
+                          {teacher.rateCount === 0 ? (
+                            <Link
+                              href="/admin/przedmioty"
+                              className="font-medium text-amber-700 underline"
+                            >
+                              brak stawek
+                            </Link>
+                          ) : (
+                            <span className="text-slate-600">
+                              {teacher.rateCount}{" "}
+                              {teacher.rateCount === 1
+                                ? "stawka"
+                                : "ustalonych"}
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-4 py-2.5">
+                          {teacher.active ? (
+                            <Badge tone="green">Aktywny</Badge>
+                          ) : (
+                            <Badge tone="slate">Nieaktywny</Badge>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </SearchFilter>
           )}
         </div>
 
@@ -109,7 +127,11 @@ export default async function AdminTeachersPage() {
               hint="Min. 8 znaków."
             />
             <Field label="Telefon" name="phone" />
-            <Field label="Poziom / certyfikaty" name="level" placeholder="np. C1" />
+            <Field
+              label="Poziom / certyfikaty"
+              name="level"
+              placeholder="np. C1"
+            />
             <p className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600">
               Stawki ustalisz po utworzeniu konta — w zakładce „Przedmioty”,
               osobno dla każdego przedmiotu i poziomu.

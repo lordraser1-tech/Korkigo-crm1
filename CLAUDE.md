@@ -43,6 +43,11 @@ zaległości i rachunki z automatyczną numeracją gotowe do druku oraz zakładk
 „Grafik i dyspozycja” spinająca dyspozycyjność, zapisy uczniów i status
 płatności każdej lekcji.
 
+Doszły do tego: regulamin odwołań z naliczaniem wg wyprzedzenia zgłoszenia,
+zakres edycji lekcji cyklicznej, dyspozycyjność per konkretny dzień wraz
+z kopiowaniem układu tygodnia, rejestr wypłat dla nauczycieli, przypomnienia
+o lekcji (Telegram/SMS) i widok miesięczny kalendarza.
+
 Z menu makiety działają już wszystkie pozycje poza „Notatki z lekcji”
 i „Baza wiedzy” (faza 2, jeszcze nie ruszone).
 
@@ -82,6 +87,8 @@ w warstwie serwisowej**, nie w komponentach.
   i kontrola dostępu. Każda funkcja przyjmuje `Actor` i sama zawęża zapytanie.
   Ceny ucznia dla roli `TEACHER` nie są pobierane z bazy (`selectFor`),
   a cudzy rekord daje `NotFoundError` (404), nie 403.
+- `src/lib/policy.ts` — progi regulaminu (odwołania, wypłaty). Kod pyta o wynik,
+  nie o liczby; przy zmianie regulaminu ruszasz **tylko ten plik**, także w UI.
 - `src/app/api/**` i `src/app/actions/**` — cienkie warstwy wejścia; obie wołają
   te same serwisy, więc nie da się obejść reguł przez API.
 - `src/lib/datetime.ts` — konwersja `Europe/Warsaw` ↔ UTC. Lekcje cykliczne
@@ -148,7 +155,17 @@ Niezmienniki, których nie wolno naruszyć przy zmianach:
 - lekcja ujęta na nieanulowanym rachunku jest zamrożona (blokada w
   `lessons.updateLesson` i `deleteLesson`),
 - rachunków nie usuwamy — `cancelInvoice()` zmienia status i zwalnia lekcje,
-- dane wystawcy trafiają na rachunek jako snapshot przy wystawieniu.
+- dane wystawcy trafiają na rachunek jako snapshot przy wystawieniu,
+- ile uczeń płaci za lekcję liczy `lessonChargeAmount()` z `policy.ts`, nie
+  sama cena — odwołanie w terminie kosztuje zero, a odwołanie na ostatnią
+  chwilę wchodzi do salda jak lekcja zrealizowana,
+- do **salda** liczą się tylko lekcje naliczone, ale w trybie `PREPAID`
+  jednostkę pakietu zajmuje też lekcja **zaplanowana** (`coverageAmount`) —
+  inaczej nie dałoby się powiedzieć, które z umówionych lekcji są opłacone.
+
+W karcie ucznia kafelek „Rozliczenia” pokazuje lekcje naliczone bez rachunku
+wraz z kwotą i wystawia rachunek dokładnie na nie
+(`createInvoiceForOutstandingLessons`).
 
 Testy tych reguł: `tests/billing.test.ts`. Przy zmianach w rozliczeniach
 **dopisz tam przypadek**.
@@ -175,6 +192,64 @@ pełny szablon notatki z lekcji to wciąż `LessonNote` z fazy 2.
 zapłacono”. Nauczyciel dostaje sam status — bez numeru rachunku i kwoty — i tylko
 dla swoich lekcji. W trybie `PREPAID` jednostki pakietu idą chronologicznie:
 opłacone → wystawione → brak pokrycia. Testy: `tests/schedule.test.ts`.
+
+Dyspozycyjność jest **datowa** (`AvailabilitySlot.date` = północ czasu
+warszawskiego), nie „na poniedziałki” — inaczej nie dałoby się odwołać jednego
+tygodnia. Żeby to nie było mordęgą, `copyAvailabilityWeek()` powtarza układ
+z zeszłego tygodnia, a `copyAvailabilityToMonth()` rozsiewa go na cały miesiąc;
+oba pomijają duplikaty i nie kasują istniejących okien.
+Testy: `tests/availability.test.ts`.
+
+## Odwołania, nieobecności i zmiana terminu
+
+`src/lib/policy.ts` + `lessons.cancelLesson()`. Niezmienniki:
+
+- **żaden próg ani procent nie stoi poza `policy.ts`** — ani w serwisach,
+  ani w komponentach; UI też czyta stamtąd opis progów,
+- liczy się moment **zgłoszenia** odwołania przez ucznia (`cancelledReportedAt`),
+  nie moment kliknięcia w systemie — formularz ma osobne pole na tę datę,
+- kwota z regulaminu zostaje obok faktycznej (`cancellationAutoAmount`
+  vs `cancellationAmount`), więc korekta jest widoczna; korektę wprowadza
+  **wyłącznie admin** i tylko z podanym powodem,
+- nauczycielowi należy się wypłata za nieobecność, ale nie za odwołanie —
+  nawet gdy uczeń zapłacił karę (`countsTowardsTeacherPayout`),
+- `updateLesson(..., scope)`: `ONE` odczepia lekcję od serii
+  (`detachedFromSeries`), `FUTURE` przesuwa kolejne o **różnicę**, pomijając
+  lekcje odczepione i te na nieanulowanym rachunku.
+
+Testy: `tests/policy.test.ts` (bez bazy) i `tests/lessons.test.ts`.
+
+## Wypłaty dla nauczycieli
+
+`src/lib/services/payouts.ts`, rejestr w `/admin/rozliczenia`, oznaczanie
+w karcie nauczyciela. Niezmienniki:
+
+- lekcja trafia na **jedną** wypłatę — `Lesson.teacherPayoutId` przypisujemy
+  w transakcji razem z utworzeniem `Payout`, więc kolejne wyliczenie jej nie
+  policzy; cofnięcie wypłaty zwraca lekcje do nierozliczonych,
+- kwota jest edytowalna (wypłata częściowa), ale lekcje przypinamy zawsze
+  wszystkie nierozliczone,
+- nauczyciel widzi własną kwotę i historię, **bez** tego kto wypłatę oznaczył
+  i bez cudzych rozliczeń; cudzy `teacherId` daje `NotFoundError`.
+
+Testy: `tests/payouts.test.ts`.
+
+## Przypomnienia o lekcji
+
+`src/lib/services/reminders.ts`, cron `GET /api/cron/reminders` (`CRON_SECRET`).
+
+- **treść siedzi w `src/lib/reminders/template.ts` i nigdzie indziej** —
+  adaptery kanałów (`reminders/channels.ts`) tylko ją przenoszą,
+- klucze API wyłącznie ze zmiennych środowiskowych — nigdy w kodzie, nigdy
+  w bazie,
+- każda próba, także nieudana, zapisuje `ReminderLog` (`@@unique([lessonId])`),
+  więc cron nie zapętla się na błędzie; uczeń z kanałem `NONE` jest pomijany
+  **bez** wpisu, bo to nie była próba,
+- token Telegrama z `/start` jest jednorazowy i wygasa po tygodniu,
+- `SMS_PROVIDER=log` (domyślne) tylko loguje treść — cały przepływ da się
+  przetestować bez płatnego konta.
+
+Testy: `tests/reminders.test.ts`.
 
 ## Moduł NDG (faza 3) — reguły
 

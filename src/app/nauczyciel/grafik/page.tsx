@@ -1,15 +1,14 @@
 import { requirePage } from "@/lib/auth";
 import { getSchedule } from "@/lib/services/schedule";
-import { listAvailability } from "@/lib/services/teachers";
 import { listStudentOptions } from "@/lib/services/students";
-import { createAvailabilityAction } from "@/app/actions/teachers";
-import { ActionForm, Field, SelectField } from "@/components/forms";
+import { AvailabilityDayEditor } from "@/components/availability-day-editor";
 import { LessonComposer } from "@/components/lesson-composer";
 import { getLessonComposerData } from "@/lib/services/subjects";
 import { createLessonsAction } from "@/app/actions/lessons";
 import { ScheduleWeek } from "@/components/schedule-week";
 import { WeekNav } from "@/components/week-nav";
 import { PageHeader, StatCard, WEEKDAY_LABEL } from "@/components/ui";
+import { formatDate, wallClockToUtc } from "@/lib/datetime";
 
 export default async function TeacherSchedulePage({
   searchParams,
@@ -19,12 +18,23 @@ export default async function TeacherSchedulePage({
   const actor = await requirePage("TEACHER");
   const { w } = await searchParams;
 
-  const [schedule, students, availability, composer] = await Promise.all([
+  const [schedule, students, composer] = await Promise.all([
     getSchedule(actor, { weekKey: w }),
     listStudentOptions(actor),
-    listAvailability(actor),
     getLessonComposerData(actor),
   ]);
+
+  // Okna pogrupowane po dniach tygodnia — edytor operuje na konkretnych datach.
+  const availabilityDays = schedule.days.map((day) => ({
+    dateKey: day.dateKey,
+    label: formatDate(wallClockToUtc(`${day.dateKey}T12:00`)),
+    weekday: WEEKDAY_LABEL[day.dayOfWeek],
+    windows: day.windows.map((window) => ({
+      id: window.id,
+      startTime: window.startTime,
+      endTime: window.endTime,
+    })),
+  }));
 
   const firstSlot = schedule.days.flatMap((day) => day.freeSlots)[0];
 
@@ -99,33 +109,11 @@ export default async function TeacherSchedulePage({
             />
           </div>
 
-          <div className="card p-5">
-            <h2 className="mb-1 text-base font-semibold text-slate-900">
-              Dodaj okno dyspozycyjności
-            </h2>
-            <p className="mb-4 text-xs text-slate-500">
-              Okna powtarzają się co tydzień. Masz ich teraz {availability.length}.
-            </p>
-            <ActionForm
-              action={createAvailabilityAction}
-              submitLabel="Dodaj okno"
-              resetOnSuccess
-            >
-              <SelectField
-                label="Dzień tygodnia"
-                name="dayOfWeek"
-                defaultValue="1"
-                options={WEEKDAY_LABEL.map((label, index) => ({
-                  value: String(index),
-                  label,
-                }))}
-              />
-              <div className="grid grid-cols-2 gap-3">
-                <Field label="Od" name="startTime" type="time" defaultValue="16:00" required />
-                <Field label="Do" name="endTime" type="time" defaultValue="20:00" required />
-              </div>
-            </ActionForm>
-          </div>
+          <AvailabilityDayEditor
+            days={availabilityDays}
+            weekKey={schedule.weekKey}
+            monthKey={schedule.weekKey.slice(0, 7)}
+          />
         </div>
       </div>
     </>

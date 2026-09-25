@@ -139,6 +139,7 @@ export default async function AdminDashboard() {
           <LessonList
             lessons={upcoming}
             showTeacher
+            isAdmin
             studentHrefBase="/admin/uczniowie"
             emptyText="Brak zaplanowanych lekcji."
           />

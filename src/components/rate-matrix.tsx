@@ -53,7 +53,11 @@ export function RateMatrix({
           {rows.map((row) => {
             const ownerId = (row.teacherId ?? row.studentId)!;
             return (
-              <tr key={ownerId} className="hover:bg-slate-50">
+              <tr
+                key={ownerId}
+                className="hover:bg-slate-50"
+                data-search={row.teacherName ?? row.studentName}
+              >
                 <td className="px-4 py-2 font-medium text-slate-800">
                   {row.teacherName ?? row.studentName}
                 </td>

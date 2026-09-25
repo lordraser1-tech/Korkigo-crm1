@@ -12,18 +12,24 @@ import { SpeakingClubCard } from "@/components/speaking-club-card";
 import { NotFoundError } from "@/lib/errors";
 import { deleteStudentAction, updateStudentAction } from "@/app/actions/students";
 import { ActionForm, Field, SelectField } from "@/components/forms";
-import { LessonList } from "@/components/lesson-list";
+import { LessonHistory, parseHistoryFilter } from "@/components/lesson-history";
 import { StudentBillingCard } from "@/components/student-billing-card";
+import { StudentContactFields } from "@/components/student-contact-fields";
+import { StudentReminderCard } from "@/components/student-reminder-card";
+import { StudentSubjects } from "@/components/student-subjects";
 import { BILLING_MODE_OPTIONS } from "@/components/billing";
 import { PageHeader, StudentStatusBadge } from "@/components/ui";
 
 export default async function AdminStudentPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ historia?: string }>;
 }) {
   const actor = await requirePage("ADMIN");
   const { id } = await params;
+  const filter = parseHistoryFilter((await searchParams).historia);
 
   const student = await getStudent(actor, id).catch((error) => {
     if (error instanceof NotFoundError) notFound();
@@ -31,10 +37,10 @@ export default async function AdminStudentPage({
   });
   const [teachers, lessons, billing, rates, speakingClub, levels] =
     await Promise.all([
-    listTeachers(actor, { includeInactive: true }),
-    listLessons(actor, { studentId: student.id }),
-    getStudentBilling(actor, student.id),
-    getStudentRates(actor, student.id),
+      listTeachers(actor, { includeInactive: true }),
+      listLessons(actor, { studentId: student.id }),
+      getStudentBilling(actor, student.id),
+      getStudentRates(actor, student.id),
       getSpeakingClub(actor, student.id),
       listSubjectLevels(actor),
     ]);
@@ -89,8 +95,7 @@ export default async function AdminStudentPage({
                   ...teachers.map((t) => ({ value: t.id, label: t.fullName })),
                 ]}
               />
-              <Field label="Telefon" name="contactPhone" defaultValue={student.contactPhone} />
-              <Field label="E-mail" name="contactEmail" type="email" defaultValue={student.contactEmail} />
+              <StudentContactFields student={student} />
               <Field
                 label="Poziom językowy"
                 name="languageLevel"
@@ -112,6 +117,8 @@ export default async function AdminStudentPage({
               />
             </ActionForm>
           </div>
+
+          <StudentReminderCard student={student} canDisconnect />
 
           <div className="card p-5">
             <h2 className="mb-1 text-base font-semibold text-slate-900">
@@ -151,15 +158,22 @@ export default async function AdminStudentPage({
             billing={billing}
             levels={levels.map((level) => ({ id: level.id, label: level.label }))}
           />
-          <h2 className="mb-3 text-base font-semibold text-slate-900">
-            Historia lekcji ({lessons.length})
-          </h2>
-          <LessonList
-            lessons={lessons}
-            payments={payments}
-            showTeacher
-            emptyText="Brak lekcji dla tego ucznia."
-          />
+
+          <StudentSubjects lessons={lessons} rates={rates.rates} />
+
+          <div>
+            <h2 className="mb-3 text-base font-semibold text-slate-900">
+              Historia lekcji ({lessons.length})
+            </h2>
+            <LessonHistory
+              lessons={lessons}
+              payments={payments}
+              filter={filter}
+              hrefFor={(key) => `/admin/uczniowie/${student.id}?historia=${key}`}
+              showTeacher
+              isAdmin
+            />
+          </div>
         </section>
       </div>
     </>

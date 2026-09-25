@@ -5,12 +5,18 @@ import type { Actor } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { ForbiddenError, NotFoundError, ValidationError } from "@/lib/errors";
 import { addWeeksToWallClock, wallClockToUtc } from "@/lib/datetime";
+import { toAmount } from "@/lib/money";
 import {
   lessonCreateSchema,
   lessonTopicSchema,
   lessonUpdateSchema,
 } from "@/lib/validation";
 import { resolveLessonRates } from "@/lib/services/subjects";
+import {
+  cancellationCharge,
+  cancellationChargePercent,
+} from "@/lib/policy";
+import { cancelLessonSchema } from "@/lib/validation";
 
 export type LessonDto = {
   id: string;
@@ -29,6 +35,16 @@ export type LessonDto = {
   subjectLevelId: string;
   /** „Polski · Maturalny” — przedmiot i poziom tej konkretnej lekcji. */
   subjectLabel: string;
+  /** Kiedy uczeń zgłosił odwołanie (nie kiedy wpisano je do systemu). */
+  cancelledReportedAt: string | null;
+  /** Kwota naliczona uczniowi za odwołanie; `null` gdy lekcja nie jest odwołana. */
+  cancellationAmount: number | null;
+  /** Kwota wynikająca z regulaminu — różnica od powyższej oznacza korektę. */
+  cancellationAutoAmount: number | null;
+  cancellationNote: string | null;
+  detachedFromSeries: boolean;
+  /** Czy lekcja została już rozliczona z nauczycielem. */
+  teacherPayoutId: string | null;
 };
 
 const LESSON_SELECT = {
@@ -42,6 +58,12 @@ const LESSON_SELECT = {
   status: true,
   topic: true,
   subjectLevelId: true,
+  cancelledReportedAt: true,
+  cancellationAmount: true,
+  cancellationAutoAmount: true,
+  cancellationNote: true,
+  detachedFromSeries: true,
+  teacherPayoutId: true,
   subjectLevel: {
     select: { name: true, subject: { select: { name: true } } },
   },
@@ -69,6 +91,16 @@ function mapLesson(row: LessonRow): LessonDto {
     topic: row.topic,
     subjectLevelId: row.subjectLevelId,
     subjectLabel: `${row.subjectLevel.subject.name} · ${row.subjectLevel.name}`,
+    cancelledReportedAt: row.cancelledReportedAt?.toISOString() ?? null,
+    cancellationAmount:
+      row.cancellationAmount === null ? null : toAmount(row.cancellationAmount),
+    cancellationAutoAmount:
+      row.cancellationAutoAmount === null
+        ? null
+        : toAmount(row.cancellationAutoAmount),
+    cancellationNote: row.cancellationNote,
+    detachedFromSeries: row.detachedFromSeries,
+    teacherPayoutId: row.teacherPayoutId,
   };
 }
 
@@ -256,16 +288,24 @@ async function assertNotInvoiced(lessonId: string): Promise<void> {
   }
 }
 
+export type LessonEditScope = "ONE" | "FUTURE";
+
 export async function updateLesson(
   actor: Actor,
   id: string,
-  input: z.input<typeof lessonUpdateSchema>
+  input: z.input<typeof lessonUpdateSchema>,
+  scope: LessonEditScope = "ONE"
 ): Promise<LessonDto> {
   const data = lessonUpdateSchema.parse(input);
 
   const existing = await prisma.lesson.findFirst({
     where: { id, ...lessonScope(actor) },
-    select: { id: true },
+    select: {
+      id: true,
+      seriesId: true,
+      scheduledAt: true,
+      detachedFromSeries: true,
+    },
   });
   if (!existing) throw new NotFoundError("Nie znaleziono lekcji.");
   await assertNotInvoiced(id);
@@ -278,14 +318,179 @@ export async function updateLesson(
   if (data.durationMinutes !== undefined) {
     update.durationMinutes = data.durationMinutes;
   }
-  if (data.status !== undefined) update.status = data.status;
+  if (data.status !== undefined) {
+    update.status = data.status;
+    if (data.status !== "CANCELLED") {
+      update.cancelledReportedAt = null;
+      update.cancellationAmount = null;
+      update.cancellationAutoAmount = null;
+      update.cancellationNote = null;
+    }
+  }
+
+  // „Tylko ta” odczepia lekcję od serii, żeby kolejne zmiany zbiorcze jej
+  // nie ruszały — tak jak w Kalendarzu Google.
+  if (existing.seriesId && scope === "ONE") {
+    update.detachedFromSeries = true;
+  }
 
   const updated = await prisma.lesson.update({
     where: { id },
     data: update,
     select: LESSON_SELECT,
   });
+
+  if (scope === "FUTURE" && existing.seriesId && !existing.detachedFromSeries) {
+    // Przesunięcie terminu przenosimy jako RÓŻNICĘ, inaczej wszystkie lekcje
+    // serii wylądowałyby w jednym terminie.
+    const shiftMs =
+      data.scheduledAt !== undefined
+        ? wallClockToUtc(data.scheduledAt).getTime() -
+          existing.scheduledAt.getTime()
+        : 0;
+
+    const following = await prisma.lesson.findMany({
+      where: {
+        seriesId: existing.seriesId,
+        detachedFromSeries: false,
+        status: "SCHEDULED",
+        scheduledAt: { gt: existing.scheduledAt },
+        id: { not: id },
+        ...lessonScope(actor),
+      },
+      select: { id: true, scheduledAt: true },
+    });
+
+    for (const lesson of following) {
+      // Lekcje już zafakturowane zostawiamy w spokoju.
+      const item = await prisma.invoiceItem.findUnique({
+        where: { lessonId: lesson.id },
+        select: { invoice: { select: { status: true } } },
+      });
+      if (item && item.invoice.status !== "CANCELLED") continue;
+
+      await prisma.lesson.update({
+        where: { id: lesson.id },
+        data: {
+          ...(shiftMs !== 0
+            ? { scheduledAt: new Date(lesson.scheduledAt.getTime() + shiftMs) }
+            : {}),
+          ...(data.durationMinutes !== undefined
+            ? { durationMinutes: data.durationMinutes }
+            : {}),
+        },
+      });
+    }
+  }
+
   return mapLesson(updated);
+}
+
+/**
+ * Odwołanie lekcji zgodnie z regulaminem (progi w `src/lib/policy.ts`).
+ *
+ * Liczy się moment ZGŁOSZENIA odwołania przez ucznia, nie moment kliknięcia
+ * w systemie — nauczyciel może wpisać zdarzenie z opóźnieniem. Kwotę wyliczoną
+ * z regulaminu zapisujemy obok faktycznej, żeby było widać każdą korektę.
+ */
+export async function cancelLesson(
+  actor: Actor,
+  id: string,
+  input: z.input<typeof cancelLessonSchema> = {},
+  now = new Date()
+): Promise<LessonDto> {
+  const data = cancelLessonSchema.parse(input);
+
+  const lesson = await prisma.lesson.findFirst({
+    where: { id, ...lessonScope(actor) },
+    select: {
+      id: true,
+      studentId: true,
+      scheduledAt: true,
+      subjectLevelId: true,
+    },
+  });
+  if (!lesson) throw new NotFoundError("Nie znaleziono lekcji.");
+  await assertNotInvoiced(id);
+
+  const reportedAt = data.reportedAt ? wallClockToUtc(data.reportedAt) : now;
+
+  const rate = await prisma.studentRate.findUnique({
+    where: {
+      studentId_subjectLevelId: {
+        studentId: lesson.studentId,
+        subjectLevelId: lesson.subjectLevelId,
+      },
+    },
+    select: { amount: true },
+  });
+  const price = rate ? toAmount(rate.amount) : 0;
+  const autoAmount = cancellationCharge(price, lesson.scheduledAt, reportedAt);
+
+  let finalAmount = autoAmount;
+  if (data.amount !== null) {
+    // Korektę kwoty robi wyłącznie admin — nauczyciel tylko odznacza status.
+    if (actor.role !== "ADMIN") {
+      throw new ForbiddenError(
+        "Korektę naliczonej kwoty może wprowadzić tylko administrator."
+      );
+    }
+    finalAmount = data.amount;
+  }
+
+  const corrected = Math.abs(finalAmount - autoAmount) > 0.004;
+  if (corrected && !data.note) {
+    throw new ValidationError(
+      "Podaj powód korekty — kwota różni się od wyliczonej z regulaminu."
+    );
+  }
+
+  const updated = await prisma.lesson.update({
+    where: { id },
+    data: {
+      status: "CANCELLED",
+      cancelledReportedAt: reportedAt,
+      cancellationAutoAmount: new Prisma.Decimal(autoAmount.toFixed(2)),
+      cancellationAmount: new Prisma.Decimal(finalAmount.toFixed(2)),
+      cancellationNote: data.note,
+    },
+    select: LESSON_SELECT,
+  });
+  return mapLesson(updated);
+}
+
+/** Podgląd naliczenia przed zapisem — do formularza odwołania. */
+export async function previewCancellation(
+  actor: Actor,
+  id: string,
+  reportedAtWallClock?: string | null,
+  now = new Date()
+): Promise<{ price: number; percent: number; amount: number }> {
+  const lesson = await prisma.lesson.findFirst({
+    where: { id, ...lessonScope(actor) },
+    select: { scheduledAt: true, studentId: true, subjectLevelId: true },
+  });
+  if (!lesson) throw new NotFoundError("Nie znaleziono lekcji.");
+
+  const reportedAt = reportedAtWallClock
+    ? wallClockToUtc(reportedAtWallClock)
+    : now;
+  const rate = await prisma.studentRate.findUnique({
+    where: {
+      studentId_subjectLevelId: {
+        studentId: lesson.studentId,
+        subjectLevelId: lesson.subjectLevelId,
+      },
+    },
+    select: { amount: true },
+  });
+  const price = rate ? toAmount(rate.amount) : 0;
+
+  return {
+    price,
+    percent: cancellationChargePercent(lesson.scheduledAt, reportedAt),
+    amount: cancellationCharge(price, lesson.scheduledAt, reportedAt),
+  };
 }
 
 /**
@@ -319,6 +524,10 @@ export async function setLessonStatus(
   id: string,
   status: LessonStatus
 ): Promise<LessonDto> {
+  // Odwołanie ma własną ścieżkę — nalicza opłatę według regulaminu.
+  if (status === "CANCELLED") return cancelLesson(actor, id);
+
+  // Zmiana statusu z odwołanej czyści naliczenie, żeby nie zostało „na zapas”.
   return updateLesson(actor, id, { status });
 }
 

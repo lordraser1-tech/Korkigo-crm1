@@ -205,6 +205,48 @@ export function formatWeekLabel(weekKey: string): string {
   return `${formatDate(first)} – ${formatDate(last)}`;
 }
 
+/**
+ * Siatka miesiąca od poniedziałku: pełne tygodnie obejmujące dany miesiąc.
+ * Dni z sąsiednich miesięcy zostają w siatce, żeby tydzień był kompletny.
+ */
+export function monthGridDays(
+  monthKey: string
+): Array<{ dateKey: string; inMonth: boolean }> {
+  const [year, month] = monthKey.split("-").map(Number);
+  const first = new Date(Date.UTC(year, month - 1, 1));
+  // getUTCDay(): 0 = niedziela, a tydzień zaczynamy w poniedziałek.
+  const offset = (first.getUTCDay() + 6) % 7;
+  const start = new Date(Date.UTC(year, month - 1, 1 - offset));
+
+  const pad = (value: number) => String(value).padStart(2, "0");
+  const days: Array<{ dateKey: string; inMonth: boolean }> = [];
+  for (let index = 0; index < 42; index += 1) {
+    const date = new Date(
+      Date.UTC(
+        start.getUTCFullYear(),
+        start.getUTCMonth(),
+        start.getUTCDate() + index
+      )
+    );
+    days.push({
+      dateKey: `${date.getUTCFullYear()}-${pad(date.getUTCMonth() + 1)}-${pad(
+        date.getUTCDate()
+      )}`,
+      inMonth: date.getUTCMonth() === month - 1,
+    });
+    // Szósty tydzień rysujemy tylko wtedy, gdy miesiąc naprawdę w nim siedzi.
+    if (index === 34 && !daySpillsOver(start, month)) break;
+  }
+  return days;
+}
+
+function daySpillsOver(start: Date, month: number): boolean {
+  const day35 = new Date(
+    Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), start.getUTCDate() + 35)
+  );
+  return day35.getUTCMonth() === month - 1;
+}
+
 /** "16:00" -> minuty od północy; do porównań okien dyspozycyjności. */
 export function timeToMinutes(value: string): number {
   const [hours, minutes] = value.split(":").map(Number);

@@ -30,9 +30,10 @@ export async function resetDatabase(): Promise<void> {
     `TRUNCATE TABLE "message_recipients", "messages",
      "ndg_monthly_limits", "ndg_settings",
      "payments", "invoice_items", "invoices", "billing_settings",
-     "speaking_club_uses", "lesson_notes", "knowledge_base_entries", "lessons",
+     "speaking_club_uses", "lesson_notes", "knowledge_base_entries",
+     "reminder_logs", "lessons", "payouts", "telegram_link_tokens",
      "student_rates", "teacher_rates", "subject_levels", "subjects",
-     "availabilities", "students", "teacher_profiles", "users"
+     "availability_slots", "students", "teacher_profiles", "users"
      RESTART IDENTITY CASCADE`
   );
 

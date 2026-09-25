@@ -1,9 +1,17 @@
 import Link from "next/link";
 import { deleteLessonAction, setLessonStatusAction } from "@/app/actions/lessons";
-import { formatDate, formatTime, formatWeekday } from "@/lib/datetime";
+import {
+  formatDate,
+  formatDateTime,
+  formatTime,
+  formatWeekday,
+  toWallClockInput,
+} from "@/lib/datetime";
 import type { LessonDto } from "@/lib/services/lessons";
 import type { LessonPaymentInfo } from "@/lib/services/billing";
 import { LessonPaymentBadge } from "@/components/billing";
+import { CancelLessonForm } from "@/components/cancel-lesson-form";
+import { EditLessonForm } from "@/components/edit-lesson-form";
 import { ConfirmButton, SubmitButton } from "@/components/forms";
 import { LessonTopicForm } from "@/components/lesson-topic-form";
 import { EmptyState, LessonStatusBadge } from "@/components/ui";
@@ -46,6 +54,7 @@ export function LessonList({
   emptyText = "Brak lekcji w wybranym okresie.",
   payments,
   canEditTopic = true,
+  isAdmin = false,
 }: {
   lessons: LessonDto[];
   showTeacher?: boolean;
@@ -56,8 +65,13 @@ export function LessonList({
   payments?: Map<string, LessonPaymentInfo>;
   /** Temat zajęć wpisywany przy lekcji. */
   canEditTopic?: boolean;
+  /** Admin może skorygować kwotę naliczoną za odwołanie. */
+  isAdmin?: boolean;
 }) {
   if (lessons.length === 0) return <EmptyState>{emptyText}</EmptyState>;
+
+  // Jedno „teraz” na całą listę — formularze odwołania startują od tej chwili.
+  const nowWallClock = toWallClockInput(new Date());
 
   return (
     <div className="space-y-5">
@@ -120,13 +134,6 @@ export function LessonList({
                       label="Zrealizowana"
                     />
                   ) : null}
-                  {lesson.status !== "CANCELLED" ? (
-                    <StatusForm
-                      lessonId={lesson.id}
-                      status="CANCELLED"
-                      label="Odwołana"
-                    />
-                  ) : null}
                   {lesson.status !== "NO_SHOW" ? (
                     <StatusForm
                       lessonId={lesson.id}
@@ -150,6 +157,42 @@ export function LessonList({
                     </form>
                   ) : null}
                 </div>
+
+                {lesson.status === "CANCELLED" ? (
+                  <p className="w-full text-xs text-slate-500">
+                    Zgłoszone{" "}
+                    {lesson.cancelledReportedAt
+                      ? formatDateTime(new Date(lesson.cancelledReportedAt))
+                      : "— brak daty zgłoszenia"}
+                    {lesson.cancellationAmount !== null && isAdmin
+                      ? ` · naliczono ${lesson.cancellationAmount.toFixed(2)} zł`
+                      : ""}
+                    {lesson.cancellationNote
+                      ? ` · korekta: ${lesson.cancellationNote}`
+                      : ""}
+                  </p>
+                ) : (
+                  <div className="grid w-full gap-2 sm:grid-cols-2">
+                    <EditLessonForm
+                      lessonId={lesson.id}
+                      scheduledAtWallClock={toWallClockInput(
+                        new Date(lesson.scheduledAt)
+                      )}
+                      durationMinutes={lesson.durationMinutes}
+                      inSeries={
+                        lesson.seriesId !== null && !lesson.detachedFromSeries
+                      }
+                    />
+                    <CancelLessonForm
+                      lessonId={lesson.id}
+                      scheduledAtWallClock={toWallClockInput(
+                        new Date(lesson.scheduledAt)
+                      )}
+                      defaultReportedAt={nowWallClock}
+                      isAdmin={isAdmin}
+                    />
+                  </div>
+                )}
               </li>
             ))}
           </ul>

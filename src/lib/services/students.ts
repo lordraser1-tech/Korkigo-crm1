@@ -1,4 +1,9 @@
-import { Prisma, type BillingMode, type StudentStatus } from "@prisma/client";
+import {
+  Prisma,
+  type BillingMode,
+  type ReminderChannel,
+  type StudentStatus,
+} from "@prisma/client";
 import { z } from "zod";
 import type { Actor } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -13,6 +18,13 @@ export type StudentDto = {
   fullName: string;
   contactEmail: string | null;
   contactPhone: string | null;
+  contactInstagram: string | null;
+  contactTelegram: string | null;
+  /** Link do pokoju (Meet/Zoom) — widoczny też dla nauczyciela. */
+  meetingLink: string | null;
+  reminderChannel: ReminderChannel;
+  /** Czy uczeń połączył konto Telegram (sam identyfikator zostaje w bazie). */
+  telegramConnected: boolean;
   parentName: string | null;
   parentPhone: string | null;
   parentEmail: string | null;
@@ -41,6 +53,11 @@ const BASE_SELECT = {
   lastName: true,
   contactEmail: true,
   contactPhone: true,
+  contactInstagram: true,
+  contactTelegram: true,
+  meetingLink: true,
+  reminderChannel: true,
+  telegramChatId: true,
   parentName: true,
   parentPhone: true,
   parentEmail: true,
@@ -84,6 +101,11 @@ function mapStudent(
     fullName: `${row.firstName} ${row.lastName}`,
     contactEmail: row.contactEmail,
     contactPhone: row.contactPhone,
+    contactInstagram: row.contactInstagram,
+    contactTelegram: row.contactTelegram,
+    meetingLink: row.meetingLink,
+    reminderChannel: row.reminderChannel,
+    telegramConnected: row.telegramChatId !== null,
     parentName: row.parentName,
     parentPhone: row.parentPhone,
     parentEmail: row.parentEmail,
@@ -184,6 +206,10 @@ export async function createStudent(
       lastName: data.lastName,
       contactEmail: data.contactEmail,
       contactPhone: data.contactPhone,
+      contactInstagram: data.contactInstagram,
+      contactTelegram: data.contactTelegram,
+      meetingLink: data.meetingLink,
+      ...(data.reminderChannel ? { reminderChannel: data.reminderChannel } : {}),
       parentName: data.parentName,
       parentPhone: data.parentPhone,
       parentEmail: data.parentEmail,
@@ -218,6 +244,16 @@ export async function updateStudent(
   if (data.lastName !== undefined) update.lastName = data.lastName;
   if (data.contactEmail !== undefined) update.contactEmail = data.contactEmail;
   if (data.contactPhone !== undefined) update.contactPhone = data.contactPhone;
+  if (data.contactInstagram !== undefined) {
+    update.contactInstagram = data.contactInstagram;
+  }
+  if (data.contactTelegram !== undefined) {
+    update.contactTelegram = data.contactTelegram;
+  }
+  if (data.meetingLink !== undefined) update.meetingLink = data.meetingLink;
+  if (data.reminderChannel !== undefined) {
+    update.reminderChannel = data.reminderChannel;
+  }
   if (data.parentName !== undefined) update.parentName = data.parentName;
   if (data.parentPhone !== undefined) update.parentPhone = data.parentPhone;
   if (data.parentEmail !== undefined) update.parentEmail = data.parentEmail;

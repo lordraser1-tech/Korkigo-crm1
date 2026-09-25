@@ -3,12 +3,14 @@
 import { requireActor } from "@/lib/auth";
 import { lessonStatusSchema } from "@/lib/validation";
 import {
+  cancelLesson,
   createLessons,
   deleteFutureSeries,
   deleteLesson,
   setLessonStatus,
   setLessonTopic,
   updateLesson,
+  type LessonEditScope,
 } from "@/lib/services/lessons";
 import {
   formToObject,
@@ -43,11 +45,41 @@ export async function updateLessonAction(
 ): Promise<ActionState> {
   try {
     const actor = await requireActor();
+    const { id, scope, ...rest } = formToObject(formData);
+    if (typeof id !== "string") throw new Error("Brak identyfikatora lekcji.");
+    const editScope: LessonEditScope = scope === "FUTURE" ? "FUTURE" : "ONE";
+    await updateLesson(actor, id, rest as never, editScope);
+    revalidatePanels();
+    return {
+      ok: true,
+      message:
+        editScope === "FUTURE"
+          ? "Zapisano zmiany w tej i kolejnych lekcjach serii."
+          : "Zapisano zmiany w tej lekcji.",
+    };
+  } catch (error) {
+    return toActionState(error);
+  }
+}
+
+/** Odwołanie lekcji z naliczeniem wg regulaminu (progi w `src/lib/policy.ts`). */
+export async function cancelLessonAction(
+  _prev: ActionState,
+  formData: FormData
+): Promise<ActionState> {
+  try {
+    const actor = await requireActor();
     const { id, ...rest } = formToObject(formData);
     if (typeof id !== "string") throw new Error("Brak identyfikatora lekcji.");
-    await updateLesson(actor, id, rest as never);
+    const lesson = await cancelLesson(actor, id, rest as never);
     revalidatePanels();
-    return { ok: true, message: "Zapisano zmiany w lekcji." };
+    return {
+      ok: true,
+      message:
+        (lesson.cancellationAmount ?? 0) > 0
+          ? `Lekcja odwołana — naliczono ${lesson.cancellationAmount?.toFixed(2)} zł.`
+          : "Lekcja odwołana — bez opłaty.",
+    };
   } catch (error) {
     return toActionState(error);
   }

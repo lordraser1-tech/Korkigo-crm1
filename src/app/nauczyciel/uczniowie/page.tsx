@@ -2,6 +2,7 @@ import { requirePage } from "@/lib/auth";
 import { listStudents } from "@/lib/services/students";
 import { createStudentAction } from "@/app/actions/students";
 import { ActionForm, Field, SelectField } from "@/components/forms";
+import { SearchFilter } from "@/components/search-filter";
 import { StudentTable } from "@/components/student-table";
 import { PageHeader } from "@/components/ui";
 
@@ -18,7 +19,9 @@ export default async function TeacherStudentsPage() {
 
       <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
         <div>
-          <StudentTable students={students} hrefBase="/nauczyciel/uczniowie" />
+          <SearchFilter placeholder="imię, nazwisko, telefon lub e-mail">
+            <StudentTable students={students} hrefBase="/nauczyciel/uczniowie" />
+          </SearchFilter>
         </div>
 
         <div className="card h-fit p-5">

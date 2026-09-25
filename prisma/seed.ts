@@ -44,6 +44,27 @@ function nextWeekday(dayOfWeek: number, hour: number, weeksAhead = 0): Date {
   );
 }
 
+/** Ten sam dzień, ale jako data dyspozycyjności (północ czasu warszawskiego). */
+function nextWeekdayDate(dayOfWeek: number, weeksAhead = 0): Date {
+  return nextWeekday(dayOfWeek, 0, weeksAhead);
+}
+
+/** Dyspozycyjność jest datowa, więc rozkładamy okna na kilka tygodni naprzód. */
+function availabilityWeeks(
+  days: number[],
+  startTime: string,
+  endTime: string,
+  weeks = 4
+): Array<{ date: Date; startTime: string; endTime: string }> {
+  const slots: Array<{ date: Date; startTime: string; endTime: string }> = [];
+  for (let week = 0; week < weeks; week += 1) {
+    for (const day of days) {
+      slots.push({ date: nextWeekdayDate(day, week), startTime, endTime });
+    }
+  }
+  return slots;
+}
+
 async function seedAdmin(): Promise<AdminActor> {
   const passwordHash = await bcrypt.hash(ADMIN_PASSWORD, 12);
   const admin = await prisma.user.upsert({
@@ -139,10 +160,7 @@ async function seedDemo(levels: Record<string, string>) {
           create: { email: teacher.email, passwordHash, role: "TEACHER" },
         },
         availabilities: {
-          create: [
-            { dayOfWeek: 1, startTime: "16:00", endTime: "20:00" },
-            { dayOfWeek: 3, startTime: "16:00", endTime: "20:00" },
-          ],
+          create: availabilityWeeks([1, 3], "16:00", "20:00"),
         },
       },
     });

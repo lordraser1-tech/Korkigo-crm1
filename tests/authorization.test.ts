@@ -231,14 +231,14 @@ describeDb("uprawnienia ról", () => {
     await expect(
       createAvailability(anna, {
         teacherId: piotr.teacherProfileId,
-        dayOfWeek: 1,
+        date: "2026-09-21",
         startTime: "16:00",
         endTime: "20:00",
       })
     ).rejects.toBeInstanceOf(ForbiddenError);
 
     await createAvailability(anna, {
-      dayOfWeek: 1,
+      date: "2026-09-21",
       startTime: "16:00",
       endTime: "20:00",
     });

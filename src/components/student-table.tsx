@@ -35,7 +35,19 @@ export function StudentTable({
         </thead>
         <tbody className="divide-y divide-slate-100">
           {students.map((student) => (
-            <tr key={student.id} className="hover:bg-slate-50">
+            <tr
+              key={student.id}
+              className="hover:bg-slate-50"
+              data-search={[
+                student.fullName,
+                student.languageLevel,
+                student.contactPhone,
+                student.contactEmail,
+                student.teacherName,
+              ]
+                .filter(Boolean)
+                .join(" ")}
+            >
               <td className="px-4 py-2.5">
                 <Link
                   href={`${hrefBase}/${student.id}`}

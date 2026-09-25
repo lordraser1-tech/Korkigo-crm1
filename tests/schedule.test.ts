@@ -48,14 +48,15 @@ describeDb("grafik i dyspozycja", () => {
     annaStudentId = await createStudent(anna.teacherProfileId, 100, "Olena");
     piotrStudentId = await createStudent(piotr.teacherProfileId, 150, "Dzmitry");
 
+    // Poniedziałek tygodnia testowego — dyspozycyjność jest datowa.
     await createAvailability(anna, {
-      dayOfWeek: 1,
+      date: "2026-09-21",
       startTime: "16:00",
       endTime: "20:00",
     });
     await createAvailability(admin, {
       teacherId: piotr.teacherProfileId,
-      dayOfWeek: 1,
+      date: "2026-09-21",
       startTime: "10:00",
       endTime: "12:00",
     });

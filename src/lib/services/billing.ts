@@ -24,6 +24,7 @@ import {
 } from "@/lib/datetime";
 import { toAmount } from "@/lib/money";
 import { loadRateLookup, resolveLessonRates } from "@/lib/services/subjects";
+import { lessonChargeAmount } from "@/lib/policy";
 import {
   billingSettingsSchema,
   lessonInvoiceSchema,
@@ -456,6 +457,76 @@ async function loadStudentForBilling(studentId: string) {
   return student;
 }
 
+/**
+ * Lekcje do zafakturowania: zrealizowane, nieobecności oraz odwołania
+ * z naliczoną opłatą — zawsze te, które nie trafiły jeszcze na rachunek.
+ */
+async function billableLessons(
+  studentId: string,
+  range?: { from: Date; to: Date }
+): Promise<
+  Array<{
+    id: string;
+    scheduledAt: Date;
+    charge: number;
+    label: string;
+    status: LessonStatus;
+  }>
+> {
+  const rows = await prisma.lesson.findMany({
+    where: {
+      studentId,
+      status: { in: ["COMPLETED", "NO_SHOW", "CANCELLED"] },
+      invoiceItem: { is: null },
+      ...(range ? { scheduledAt: { gte: range.from, lt: range.to } } : {}),
+    },
+    select: {
+      id: true,
+      scheduledAt: true,
+      status: true,
+      subjectLevelId: true,
+      cancellationAmount: true,
+      subjectLevel: {
+        select: { name: true, subject: { select: { name: true } } },
+      },
+    },
+    orderBy: { scheduledAt: "asc" },
+  });
+
+  const rates = await loadRateLookup({ studentIds: [studentId] });
+
+  return rows
+    .map((row) => ({
+      id: row.id,
+      scheduledAt: row.scheduledAt,
+      status: row.status,
+      subjectLevelId: row.subjectLevelId,
+      label: `${row.subjectLevel.subject.name} · ${row.subjectLevel.name}`,
+      price: rates.student(studentId, row.subjectLevelId),
+      charge: lessonChargeAmount({
+        status: row.status,
+        price: rates.student(studentId, row.subjectLevelId) ?? 0,
+        cancellationAmount:
+          row.cancellationAmount === null
+            ? null
+            : toAmount(row.cancellationAmount),
+      }),
+    }))
+    .filter((row) => row.charge > 0.004)
+    .map(({ id, scheduledAt, charge, label, status }) => ({
+      id,
+      scheduledAt,
+      charge,
+      label,
+      status,
+    }));
+}
+
+const STATUS_SUFFIX: Partial<Record<LessonStatus, string>> = {
+  CANCELLED: " (odwołana — opłata wg regulaminu)",
+  NO_SHOW: " (nieobecność)",
+};
+
 /** Rachunek zbiorczy za miesiąc — tryb POSTPAID. */
 export async function createMonthlyInvoice(
   actor: Actor,
@@ -472,46 +543,11 @@ export async function createMonthlyInvoice(
   }
 
   const { from, to } = monthRange(data.month);
-  const lessons = await prisma.lesson.findMany({
-    where: {
-      studentId: student.id,
-      status: "COMPLETED",
-      scheduledAt: { gte: from, lt: to },
-      invoiceItem: { is: null },
-    },
-    select: {
-      id: true,
-      scheduledAt: true,
-      subjectLevelId: true,
-      subjectLevel: {
-        select: { name: true, subject: { select: { name: true } } },
-      },
-    },
-    orderBy: { scheduledAt: "asc" },
-  });
+  const lessons = await billableLessons(student.id, { from, to });
 
   if (lessons.length === 0) {
     throw new ValidationError(
-      "Brak nierozliczonych lekcji zrealizowanych w tym miesiącu."
-    );
-  }
-
-  // Każda lekcja ma własną cenę — zależy od przedmiotu i poziomu.
-  const rates = await loadRateLookup({ studentIds: [student.id] });
-  const missing = lessons.filter(
-    (lesson) => rates.student(student.id, lesson.subjectLevelId) === null
-  );
-  if (missing.length > 0) {
-    const labels = [
-      ...new Set(
-        missing.map(
-          (lesson) =>
-            `${lesson.subjectLevel.subject.name} · ${lesson.subjectLevel.name}`
-        )
-      ),
-    ];
-    throw new ValidationError(
-      `Uczeń nie ma ustalonej ceny dla: ${labels.join(", ")}. Uzupełnij ją w zakładce Przedmioty.`
+      "Brak nierozliczonych lekcji w tym miesiącu (albo żadna nie jest naliczana)."
     );
   }
 
@@ -524,16 +560,53 @@ export async function createMonthlyInvoice(
     periodStart: from,
     periodEnd: new Date(to.getTime() - 1),
     note: data.note,
-    items: lessons.map((lesson) => {
-      const price = rates.student(student.id, lesson.subjectLevelId) ?? 0;
-      return {
-        description: `${lesson.subjectLevel.subject.name} · ${lesson.subjectLevel.name} — ${lessonLabel(lesson.scheduledAt)}`,
-        quantity: 1,
-        unitPrice: price,
-        amount: price,
-        lessonId: lesson.id,
-      };
-    }),
+    items: lessons.map((lesson) => ({
+      description: `${lesson.label} — ${lessonLabel(lesson.scheduledAt)}${
+        STATUS_SUFFIX[lesson.status] ?? ""
+      }`,
+      quantity: 1,
+      unitPrice: lesson.charge,
+      amount: lesson.charge,
+      lessonId: lesson.id,
+    })),
+  });
+}
+
+/**
+ * Rachunek za wszystkie nierozliczone lekcje ucznia — niezależnie od miesiąca.
+ * To ścieżka z kafelka „Rozliczenia” w karcie ucznia: kwota wychodzi dokładnie
+ * z tego, co widać jako nieopłacone.
+ */
+export async function createInvoiceForOutstandingLessons(
+  actor: Actor,
+  input: { studentId: string; issuedAt?: string; dueDays?: number; note?: string }
+): Promise<InvoiceDto> {
+  assertAdmin(actor);
+  const student = await loadStudentForBilling(input.studentId);
+  const lessons = await billableLessons(student.id);
+
+  if (lessons.length === 0) {
+    throw new ValidationError("Uczeń nie ma nierozliczonych lekcji.");
+  }
+
+  const { issuedAt, dueAt } = await resolveDates(input.issuedAt, input.dueDays);
+
+  return createInvoice({
+    studentId: student.id,
+    issuedAt,
+    dueAt,
+    periodStart: lessons[0].scheduledAt,
+    periodEnd: lessons[lessons.length - 1].scheduledAt,
+    note: input.note ?? null,
+    items: lessons.map((lesson) => ({
+      description: `${lesson.label} — ${lessonLabel(lesson.scheduledAt)}${
+        STATUS_SUFFIX[lesson.status] ?? ""
+      }`,
+      quantity: 1,
+      unitPrice: lesson.charge,
+      amount: lesson.charge,
+      lessonId: lesson.id,
+    })),
   });
 }
 
@@ -558,9 +631,9 @@ export async function createLessonInvoice(
     },
   });
   if (!lesson) throw new NotFoundError("Nie znaleziono lekcji.");
-  if (lesson.status !== "COMPLETED") {
+  if (lesson.status === "SCHEDULED") {
     throw new ValidationError(
-      "Rachunek wystawiamy tylko za lekcję zrealizowaną."
+      "Rachunek wystawiamy dopiero po lekcji — najpierw odznacz jej status."
     );
   }
   if (lesson.invoiceItem) {
@@ -831,16 +904,33 @@ export type LessonPaymentInfo = {
   invoiceId: string | null;
 };
 
-/** Statusy lekcji, które naliczają się uczniowi. */
-const CHARGEABLE: LessonStatus[] = ["COMPLETED", "NO_SHOW"];
-
 type LessonForBilling = {
   id: string;
   scheduledAt: Date;
   status: LessonStatus;
+  /** Ile uczeń faktycznie płaci za tę lekcję (0 = nie jest naliczana). */
+  charge: number;
+  /** Cena ucznia za tę kombinację przedmiot/poziom — 0 gdy nieustalona. */
   price: number;
   monthKey: string;
 };
+
+/** Lekcja wchodzi do salda, jeśli cokolwiek za nią naliczono. */
+function isCharged(lesson: LessonForBilling): boolean {
+  return lesson.charge > 0.004;
+}
+
+/**
+ * Ile ta lekcja zdejmuje z wpłat. Zaplanowana lekcja nie jest jeszcze
+ * naliczona (saldo jej nie widzi), ale w pakiecie zajmuje jednostkę — inaczej
+ * nie dałoby się odpowiedzieć, które z umówionych lekcji są już opłacone.
+ */
+function coverageAmount(lesson: LessonForBilling, mode: BillingMode): number {
+  if (lesson.status === "SCHEDULED") {
+    return mode === "PREPAID" ? lesson.price : 0;
+  }
+  return lesson.charge;
+}
 
 type StudentBillingState = {
   studentId: string;
@@ -894,9 +984,7 @@ function buildStudentBillingState(
   );
 
   const charged = round(
-    lessons
-      .filter((lesson) => CHARGEABLE.includes(lesson.status))
-      .reduce((sum, lesson) => sum + lesson.price, 0)
+    lessons.reduce((sum, lesson) => sum + lesson.charge, 0)
   );
   const paid = round(input.payments.reduce((sum, amount) => sum + amount, 0));
 
@@ -924,7 +1012,10 @@ function buildStudentBillingState(
   let pool = paid;
 
   for (const lesson of lessons) {
-    if (lesson.status === "CANCELLED") {
+    const coverage = coverageAmount(lesson, input.billingMode);
+    // Lekcja bez naliczenia (odwołana w terminie albo zaplanowana poza
+    // pakietem) nie bierze udziału w rozliczeniu — także nie zjada wpłat.
+    if (coverage <= 0.004) {
       lessonStates.set(lesson.id, {
         state: "NOT_CHARGED",
         fromPackage: false,
@@ -955,7 +1046,7 @@ function buildStudentBillingState(
         else if (monthInvoice.dueAt < now) state = "OVERDUE";
         else if (monthInvoice.paid > 0) state = "PARTIAL";
       }
-      if (state !== "PAID" && CHARGEABLE.includes(lesson.status)) unpaidLessons += 1;
+      if (state !== "PAID" && isCharged(lesson)) unpaidLessons += 1;
 
       lessonStates.set(lesson.id, {
         state,
@@ -968,8 +1059,8 @@ function buildStudentBillingState(
 
     // PREPAID i PER_LESSON: wpłaty pokrywają lekcje po kolei.
     let state: LessonPaymentState;
-    if (pool >= lesson.price - 0.004 && lesson.price > 0) {
-      pool = round(pool - lesson.price);
+    if (pool >= coverage - 0.004) {
+      pool = round(pool - coverage);
       state = "PAID";
     } else if (pool > 0.004) {
       pool = 0;
@@ -978,7 +1069,7 @@ function buildStudentBillingState(
       state = "UNPAID";
     }
 
-    if (state !== "PAID" && CHARGEABLE.includes(lesson.status)) unpaidLessons += 1;
+    if (state !== "PAID" && isCharged(lesson)) unpaidLessons += 1;
 
     lessonStates.set(lesson.id, {
       state,
@@ -1027,6 +1118,7 @@ async function loadBillingStates(
           scheduledAt: true,
           status: true,
           subjectLevelId: true,
+          cancellationAmount: true,
         },
       },
       payments: { select: { amount: true } },
@@ -1060,6 +1152,14 @@ async function loadBillingStates(
           id: lesson.id,
           scheduledAt: lesson.scheduledAt,
           status: lesson.status,
+          charge: lessonChargeAmount({
+            status: lesson.status,
+            price: rates.student(student.id, lesson.subjectLevelId) ?? 0,
+            cancellationAmount:
+              lesson.cancellationAmount === null
+                ? null
+                : toAmount(lesson.cancellationAmount),
+          }),
           price: rates.student(student.id, lesson.subjectLevelId) ?? 0,
           monthKey: toWallClockInput(lesson.scheduledAt).slice(0, 7),
         })),
@@ -1135,18 +1235,24 @@ export async function getStudentBilling(
   balance: StudentBalanceDto;
   invoices: InvoiceDto[];
   payments: PaymentDto[];
+  /** Lekcje naliczone, które nie trafiły jeszcze na żaden rachunek. */
   unbilledLessons: number;
+  outstandingAmount: number;
 }> {
   assertAdmin(actor);
-  const [balance, invoices, payments, unbilledLessons] = await Promise.all([
+  const [balance, invoices, payments, outstanding] = await Promise.all([
     getStudentBalance(actor, studentId),
     listInvoices(actor, { studentId }),
     listPayments(actor, { studentId }),
-    prisma.lesson.count({
-      where: { studentId, status: "COMPLETED", invoiceItem: { is: null } },
-    }),
+    getOutstandingSummary(actor, studentId),
   ]);
-  return { balance, invoices, payments, unbilledLessons };
+  return {
+    balance,
+    invoices,
+    payments,
+    unbilledLessons: outstanding.lessons,
+    outstandingAmount: outstanding.amount,
+  };
 }
 
 // ---------- FLAGA DLA NAUCZYCIELA ----------
@@ -1201,41 +1307,49 @@ export async function listUnbilledLessons(
   studentId?: string | null
 ): Promise<UnbilledLessonDto[]> {
   assertAdmin(actor);
-  const rows = await prisma.lesson.findMany({
-    where: {
-      status: "COMPLETED",
-      invoiceItem: { is: null },
-      ...(studentId ? { studentId } : {}),
-    },
-    select: {
-      id: true,
-      studentId: true,
-      scheduledAt: true,
-      subjectLevelId: true,
-      subjectLevel: {
-        select: { name: true, subject: { select: { name: true } } },
-      },
-      student: {
-        select: { firstName: true, lastName: true, billingMode: true },
-      },
-    },
-    orderBy: { scheduledAt: "asc" },
-  });
 
-  const rates = await loadRateLookup();
+  const students = studentId
+    ? [{ id: studentId }]
+    : await prisma.student.findMany({ select: { id: true } });
 
-  return rows.map((row) => ({
-    lessonId: row.id,
-    studentId: row.studentId,
-    studentName: `${row.student.firstName} ${row.student.lastName}`,
-    billingMode: row.student.billingMode,
-    scheduledAt: row.scheduledAt.toISOString(),
-    subjectLabel: `${row.subjectLevel.subject.name} · ${row.subjectLevel.name}`,
-    amount: rates.student(row.studentId, row.subjectLevelId) ?? 0,
-  }));
+  const result: UnbilledLessonDto[] = [];
+  for (const student of students) {
+    const lessons = await billableLessons(student.id);
+    if (lessons.length === 0) continue;
+
+    const profile = await prisma.student.findUniqueOrThrow({
+      where: { id: student.id },
+      select: { firstName: true, lastName: true, billingMode: true },
+    });
+
+    for (const lesson of lessons) {
+      result.push({
+        lessonId: lesson.id,
+        studentId: student.id,
+        studentName: `${profile.firstName} ${profile.lastName}`,
+        billingMode: profile.billingMode,
+        scheduledAt: lesson.scheduledAt.toISOString(),
+        subjectLabel: lesson.label,
+        amount: lesson.charge,
+      });
+    }
+  }
+
+  return result.sort((a, b) => a.scheduledAt.localeCompare(b.scheduledAt));
 }
 
-// ---------- STATUS PŁATNOŚCI POJEDYNCZEJ LEKCJI ----------
+/** Podsumowanie do kafelka „Rozliczenia” w karcie ucznia. */
+export async function getOutstandingSummary(
+  actor: Actor,
+  studentId: string
+): Promise<{ lessons: number; amount: number }> {
+  assertAdmin(actor);
+  const lessons = await billableLessons(studentId);
+  return {
+    lessons: lessons.length,
+    amount: round(lessons.reduce((sum, lesson) => sum + lesson.charge, 0)),
+  };
+}
 
 // ---------- STATUS PŁATNOŚCI POJEDYNCZEJ LEKCJI ----------
 

@@ -230,6 +230,10 @@ płatności każdej lekcji**.
 - **nauczyciel** zarządza własnymi oknami i zapisuje uczniów; przy zapisie
   dostaje listę wolnych godzin wyliczoną z jego dyspozycyjności (okna minus
   lekcje już zajmujące termin; odwołana lekcja zwalnia termin),
+- dyspozycyjność ustawia się **na konkretny dzień**, nie „na poniedziałki” —
+  dzięki temu da się odwołać jeden tydzień bez ruszania reszty. Żeby to nie
+  było mordęgą, są dwa skróty: „Powtórz z zeszłego tygodnia” i „Skopiuj ten
+  tydzień na cały miesiąc” (duplikaty są pomijane, istniejące okna zostają),
 - **admin** widzi dyspozycyjność i zajęcia wszystkich, filtruje po nauczycielu,
   a po wybraniu jednego może dopisać mu okno albo zapisać ucznia na lekcję.
 
@@ -245,7 +249,80 @@ Status płatności lekcji (`getLessonPaymentStates`) liczy się tak:
 W trybie `PREPAID` jednostki pakietu przydzielane są **chronologicznie**: pierwsze
 lekcje zużywają to, co opłacone, kolejne to, co wystawione, a reszta czeka na
 nowy pakiet. Lekcje odwołane nie zużywają jednostek. Te same statusy widać na
-kalendarzu (`/nauczyciel/kalendarz`, `/admin/lekcje`).
+kalendarzu (`/nauczyciel/kalendarz`, `/admin/lekcje`), który przełącza się
+między listą a siatką miesiąca — wybór pamięta przeglądarka.
+
+## Odwołania i nieobecności
+
+Progi regulaminu siedzą **wyłącznie** w `src/lib/policy.ts` — reszta kodu pyta
+o wynik, nie o liczby. Domyślnie:
+
+| Kiedy uczeń zgłosił odwołanie | Ile płaci |
+| --- | --- |
+| 24 h przed lekcją i wcześniej | 0% |
+| 12–24 h przed lekcją | 50% |
+| poniżej 12 h (albo po terminie) | 100% |
+
+Nieobecność bez odwołania to zawsze pełna cena. Nauczycielowi należy się
+wypłata za nieobecność (czekał), ale nie za odwołanie — nawet gdy uczeń
+zapłacił karę.
+
+Liczy się moment **zgłoszenia**, nie moment kliknięcia w systemie: formularz
+odwołania ma pole „Kiedy uczeń zgłosił odwołanie” (domyślnie teraz) i to od
+niego zależy próg. Kwotę wyliczoną z regulaminu zapisujemy obok faktycznej
+(`Lesson.cancellationAutoAmount` vs `cancellationAmount`), więc każda korekta
+jest widoczna. Korektę wprowadza **tylko admin** i musi podać powód —
+nauczyciel odwołuje lekcję, ale kwoty nie rusza.
+
+## Zmiana terminu lekcji cyklicznej
+
+Przy lekcji z serii formularz „Zmień termin” pyta o zakres:
+
+- **tylko ta** — przesuwa jedną lekcję i odczepia ją od serii
+  (`Lesson.detachedFromSeries`), więc kolejne zmiany zbiorcze jej nie ruszą,
+- **ta i kolejne** — przesuwa następne lekcje serii o **tę samą różnicę**
+  (nie ustawia im wspólnego terminu). Lekcje odczepione i ujęte na
+  nieanulowanym rachunku zostają nietknięte.
+
+## Wypłaty dla nauczycieli
+
+`src/lib/services/payouts.ts`. „Ile się należy” to suma stawek nauczyciela za
+lekcje kwalifikujące się do wypłaty (patrz wyżej), które nie zostały jeszcze
+przypisane do żadnej wypłaty. Oznaczenie wypłaty (`Payout`) przypina do niej te
+lekcje przez `Lesson.teacherPayoutId`, więc kolejne wyliczenie ich nie policzy —
+ta sama lekcja nie trafi na dwie wypłaty. Cofnięcie wypłaty zwraca lekcje do
+nierozliczonych.
+
+- **admin**: rejestr wszystkich nauczycieli w `/admin/rozliczenia`, oznaczanie
+  i cofanie wypłaty w karcie nauczyciela,
+- **nauczyciel**: w „Moich wypłatach” widzi kwotę oczekującą i własną historię —
+  bez informacji, kto wypłatę oznaczył, i bez cudzych rozliczeń.
+
+Kwota wypłaty jest edytowalna (wypłata częściowa), ale lekcje przypinamy
+zawsze wszystkie nierozliczone — inaczej nie dałoby się potem powiedzieć, co
+jeszcze czeka na pieniądze.
+
+## Przypomnienia o lekcji
+
+`src/lib/services/reminders.ts`. Cron (`GET /api/cron/reminders`, chroniony
+`CRON_SECRET`) bierze lekcje z okna 23–25 h przed terminem i wysyła jedno
+przypomnienie na lekcję.
+
+- kanał wybiera się per uczeń (`Student.reminderChannel`: brak / Telegram / SMS),
+- **treść wiadomości jest w jednym miejscu** — `src/lib/reminders/template.ts`;
+  adaptery kanałów tylko ją przenoszą,
+- każda próba, także nieudana, zostawia wpis w `ReminderLog`
+  (`@@unique([lessonId])`), więc cron nie zapętla się na błędzie, a admin ma
+  ślad. Uczeń z kanałem „brak” jest pomijany bez wpisu — to nie jest próba,
+- Telegram podpina się linkiem `/start <token>` z karty ucznia; token jest
+  **jednorazowy** i wygasa po tygodniu. Webhook wymaga
+  `TELEGRAM_WEBHOOK_SECRET`,
+- SMS idzie przez dostawcę z `SMS_PROVIDER`; domyślne `log` tylko wypisuje treść
+  do logów, więc cały przepływ da się przetestować bez płatnego konta,
+- licznik wysyłek za bieżący miesiąc stoi w `/admin/ustawienia` — SMS-y kosztują.
+
+Klucze API czytamy **wyłącznie ze zmiennych środowiskowych**, nigdy z kodu
+i nigdy z bazy.
 
 ## Struktura
 
@@ -264,7 +341,10 @@ src/
   lib/
     auth.ts            # Actor (kto pyta) + strażnicy ról
     services/          # LOGIKA I UPRAWNIENIA: students, teachers, lessons,
-                       # finance, billing, schedule, ndg, messages
+                       # finance, billing, schedule, ndg, messages,
+                       # payouts, reminders
+    policy.ts          # progi regulaminu (odwołania, wypłaty) — jedno miejsce
+    reminders/         # treść przypomnień + adaptery kanałów
     validation.ts      # schematy Zod
     datetime.ts        # czas warszawski <-> UTC, lekcje cykliczne
 tests/                 # testy uprawnień i konwersji czasu
@@ -330,6 +410,12 @@ kwartału z limitów miesięcy, zmianę kwoty w trakcie roku, progi ostrzeżeń,
 prognozę, obie podstawy przychodu i pracę po wyłączeniu pilnowania limitu.
 Wiadomości sprawdzają zakres skrzynek, wysyłkę zbiorczą (z pominięciem kont
 zablokowanych) i licznik nieprzeczytanych stojący za czerwoną kropką.
+Dochodzą do tego: progi regulaminu odwołań (`tests/policy.test.ts`, bez bazy),
+odwoływanie lekcji wraz z korektą kwoty zastrzeżoną dla admina i zakres edycji
+serii (`tests/lessons.test.ts`), wypłaty — w tym to, że lekcja nie trafi na dwie
+wypłaty (`tests/payouts.test.ts`), przypomnienia wraz ze śladem po nieudanej
+wysyłce i jednorazowością tokenu Telegrama (`tests/reminders.test.ts`) oraz
+dyspozycyjność i kopiowanie układu tygodnia (`tests/availability.test.ts`).
 
 Bez `DATABASE_URL` testy integracyjne są pomijane (uruchomią się tylko testy
 konwersji czasu).
@@ -353,7 +439,11 @@ konwersji czasu).
 
 Potrzebny jest Postgres i host uruchamiający Node (Railway, Vercel + Neon/Supabase).
 Zmienne środowiskowe: `DATABASE_URL`, `AUTH_SECRET` (oraz `SEED_ADMIN_*` przy
-pierwszym seedzie). Na produkcji migracje uruchamiaj przez
+pierwszym seedzie). Przypomnienia dokładają `CRON_SECRET`, a zależnie od kanału
+`TELEGRAM_BOT_TOKEN` / `TELEGRAM_BOT_NAME` / `TELEGRAM_WEBHOOK_SECRET` albo
+`SMS_PROVIDER` / `SMS_API_TOKEN` / `SMS_SENDER` — komplet w `.env.example`.
+Cron wołaj raz na godzinę: `curl -H "Authorization: Bearer $CRON_SECRET"
+https://.../api/cron/reminders`. Na produkcji migracje uruchamiaj przez
 `npx prisma migrate deploy`. Ciasteczko sesji jest `httpOnly`, `sameSite=lax`
 i `secure` w trybie produkcyjnym — wymaga HTTPS.
 
