@@ -334,6 +334,45 @@ przypomnienie na lekcję.
 Klucze API czytamy **wyłącznie ze zmiennych środowiskowych**, nigdy z kodu
 i nigdy z bazy.
 
+## Synchronizacja z Google Calendar
+
+Jednokierunkowo: **CRM wypycha grafik, Google go tylko odzwierciedla.** Zmiana
+zrobiona w kalendarzu nie wraca do systemu — terminy przestawia się w panelu.
+
+Każdy nauczyciel podłącza własne konto w `Ustawienia → Kalendarz Google`
+(OAuth). Admin widzi stan każdego połączenia w karcie nauczyciela i może je
+wstrzymać albo rozłączyć, ale nie zaloguje się za kogoś.
+
+- **w zdarzeniu nie ma żadnej kwoty** — ani ceny ucznia, ani stawki
+  nauczyciela. Kalendarz bywa współdzielony i eksportowany, więc pieniądze tam
+  nie trafiają. Idzie tytuł (`Polski · Ogólny — Olena Tkachenko`), temat zajęć
+  i link do pokoju,
+- lekcja odwołana jest usuwana z kalendarza; zrealizowana i nieobecność zostają,
+- usunięcie lekcji zostawia nagrobek, więc zdarzenie znika także wtedy, gdy
+  wiersza lekcji już nie ma,
+- czas idzie jako ścienny plus strefa `Europe/Warsaw`, więc lekcja o 16:00
+  zostaje o 16:00 po zmianie czasu,
+- błąd jednego nauczyciela nie zatrzymuje pozostałych — ląduje w jego karcie.
+
+Cron: `curl -H "Authorization: Bearer $CRON_SECRET" https://.../api/cron/calendar`.
+Bez konta Google całość przetestujesz z `GOOGLE_CALENDAR_PROVIDER=log` —
+wywołania lądują w pamięci zamiast lecieć do sieci.
+
+## Ewidencja przychodu (PIT-36)
+
+`/admin/ewidencja` — zestawienie roku: liczba porządkowa, data, dokument,
+uczeń, kwota i suma narastająca. Do pobrania jako CSV i do druku.
+
+**Aplikacja nie wylicza podatku.** Nie zna stawek ani kwoty wolnej i tak ma
+zostać — podaje wyłącznie kwoty wynikające z dokumentów. Sposób ujęcia
+przychodu potwierdź z księgowym; w interfejsie stoi to samo zastrzeżenie.
+
+- podstawa (`przychód należny` z rachunków albo `kasowy` z wpłat) pochodzi
+  z ustawień NDG, więc ewidencja i pas ostrzegawczy limitu liczą to samo,
+- numeracja i suma narastająca idą przez cały rok, nie per miesiąc,
+- anulowany rachunek wypada z ewidencji,
+- CSV jest przygotowany pod polski Excel: średnik, przecinek dziesiętny i BOM.
+
 ## Struktura
 
 ```
@@ -352,9 +391,10 @@ src/
     auth.ts            # Actor (kto pyta) + strażnicy ról
     services/          # LOGIKA I UPRAWNIENIA: students, teachers, lessons,
                        # finance, billing, schedule, ndg, messages,
-                       # payouts, reminders
+                       # payouts, reminders, calendar-sync, evidence
     policy.ts          # progi regulaminu (odwołania, wypłaty) — jedno miejsce
     reminders/         # treść przypomnień + adaptery kanałów
+    google/            # OAuth Google + zapis zdarzeń w kalendarzu
     validation.ts      # schematy Zod
     datetime.ts        # czas warszawski <-> UTC, lekcje cykliczne
 tests/                 # testy uprawnień i konwersji czasu
@@ -425,7 +465,11 @@ odwoływanie lekcji wraz z korektą kwoty zastrzeżoną dla admina i zakres edyc
 serii (`tests/lessons.test.ts`), wypłaty — w tym to, że lekcja nie trafi na dwie
 wypłaty (`tests/payouts.test.ts`), przypomnienia wraz ze śladem po nieudanej
 wysyłce i jednorazowością tokenu Telegrama (`tests/reminders.test.ts`) oraz
-dyspozycyjność i kopiowanie układu tygodnia (`tests/availability.test.ts`).
+dyspozycyjność i kopiowanie układu tygodnia (`tests/availability.test.ts`),
+synchronizacja z Google Calendar — w tym brak kwot w zdarzeniu i to, że lekcje
+jednego nauczyciela nie trafiają do kalendarza drugiego
+(`tests/calendar-sync.test.ts`) — oraz ewidencja przychodu wraz z pilnowaniem,
+że w wyniku nie ma żadnej stawki podatkowej (`tests/evidence.test.ts`).
 
 Bez `DATABASE_URL` testy integracyjne są pomijane (uruchomią się tylko testy
 konwersji czasu).
@@ -452,15 +496,22 @@ Zmienne środowiskowe: `DATABASE_URL`, `AUTH_SECRET` (oraz `SEED_ADMIN_*` przy
 pierwszym seedzie). Przypomnienia dokładają `CRON_SECRET`, a zależnie od kanału
 `TELEGRAM_BOT_TOKEN` / `TELEGRAM_BOT_NAME` / `TELEGRAM_WEBHOOK_SECRET` albo
 `SMS_PROVIDER` / `SMS_API_TOKEN` / `SMS_SENDER` — komplet w `.env.example`.
-Cron wołaj raz na godzinę: `curl -H "Authorization: Bearer $CRON_SECRET"
-https://.../api/cron/reminders`. Na produkcji migracje uruchamiaj przez
+Synchronizacja kalendarza dokłada `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`
+i `GOOGLE_REDIRECT_URI` (musi wskazywać na `/api/google/callback`).
+Crony wołaj raz na godzinę: `/api/cron/reminders` i `/api/cron/calendar`,
+oba z nagłówkiem `Authorization: Bearer $CRON_SECRET`. Na produkcji migracje uruchamiaj przez
 `npx prisma migrate deploy`. Ciasteczko sesji jest `httpOnly`, `sameSite=lax`
 i `secure` w trybie produkcyjnym — wymaga HTTPS.
 
 ## Co dalej
 
-Z fazy 2 zostały: notatki z lekcji (szablon co było / jak poszło / cel / co
-dalej), baza wiedzy per uczeń i synchronizacja z Google Calendar
-(`Lesson.googleEventId` jest już zarezerwowane). Z fazy 3 zostały: eksport
-ewidencji do PIT-36 i automatyczne wezwania do zapłaty (**reguły podatkowe do
+Z fazy 2 zostały notatki z lekcji (szablon co było / jak poszło / cel / co
+dalej) i baza wiedzy per uczeń — oba modele są już w schemacie
+(`LessonNote`, `KnowledgeBaseEntry`), ale nie mają jeszcze kodu. Z fazy 3
+zostały automatyczne wezwania do zapłaty i pełne raporty (**reguły podatkowe do
 potwierdzenia z księgowym**). Faza 4 to wsparcie AI przy notatkach.
+
+Aplikacja mobilna jest odłożona świadomie. Gdy wróci, pierwsze do zrobienia
+jest uwierzytelnianie tokenem — dziś sesja to ciasteczko `httpOnly`, którego
+apka nie użyje — i domknięcie REST-a: nie ma endpointów dla wypłat, Speaking
+Clubu, dyspozycyjności ani zapisu przedmiotów.

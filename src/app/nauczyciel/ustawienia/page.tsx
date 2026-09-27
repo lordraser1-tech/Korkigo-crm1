@@ -3,28 +3,63 @@ import { requirePage } from "@/lib/auth";
 import { getMyTeacherProfile } from "@/lib/services/teachers";
 import { getTeacherRates } from "@/lib/services/subjects";
 import {
+  getCalendarLink,
+  isCalendarConfigured,
+} from "@/lib/services/calendar-sync";
+import {
   changeOwnPasswordAction,
   updateTeacherAction,
 } from "@/app/actions/teachers";
 import { ActionForm, Field } from "@/components/forms";
+import { GoogleCalendarCard } from "@/components/google-calendar-card";
 import { formatPLN } from "@/lib/money";
 import { PageHeader } from "@/components/ui";
 
-export default async function TeacherSettingsPage() {
+export default async function TeacherSettingsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ kalendarz?: string }>;
+}) {
   const actor = await requirePage("TEACHER");
-  const [profile, rates] = await Promise.all([
+  const { kalendarz } = await searchParams;
+  const [profile, rates, calendar] = await Promise.all([
     getMyTeacherProfile(actor),
     getTeacherRates(actor, actor.teacherProfileId),
+    getCalendarLink(actor),
   ]);
 
   return (
     <>
       <PageHeader
         title="Ustawienia"
-        description="Twoje dane, dyspozycyjność i hasło."
+        description="Twoje dane, kalendarz, dyspozycyjność i hasło."
       />
 
+      {kalendarz === "ok" ? (
+        <p className="mb-5 rounded-lg bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
+          Kalendarz Google połączony. Lekcje pojadą przy najbliższej wysyłce —
+          albo od razu, gdy klikniesz „Wyślij teraz”.
+        </p>
+      ) : null}
+      {kalendarz === "odmowa" ? (
+        <p className="mb-5 rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          Nie wyraziłeś zgody w Google — kalendarz został niepołączony.
+        </p>
+      ) : null}
+      {kalendarz === "blad" ? (
+        <p className="mb-5 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
+          Połączenie z Google nie udało się. Spróbuj ponownie; jeśli wraca,
+          sprawdź konfigurację kluczy.
+        </p>
+      ) : null}
+
       <div className="grid gap-6 lg:grid-cols-2">
+        <GoogleCalendarCard
+          link={calendar}
+          configured={isCalendarConfigured()}
+          canConnect
+        />
+
         <div className="card p-5">
           <h2 className="mb-4 text-base font-semibold text-slate-900">Moje dane</h2>
           <ActionForm action={updateTeacherAction} submitLabel="Zapisz dane">

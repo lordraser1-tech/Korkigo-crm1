@@ -46,7 +46,9 @@ płatności każdej lekcji.
 Doszły do tego: regulamin odwołań z naliczaniem wg wyprzedzenia zgłoszenia,
 zakres edycji lekcji cyklicznej, dyspozycyjność per konkretny dzień wraz
 z kopiowaniem układu tygodnia, rejestr wypłat dla nauczycieli, przypomnienia
-o lekcji (Telegram/SMS) i widok miesięczny kalendarza.
+o lekcji (Telegram/SMS), widok miesięczny kalendarza, synchronizacja
+z Google Calendar (jednokierunkowa, per nauczyciel) oraz ewidencja przychodu
+pod PIT-36 (CSV + wydruk).
 
 Z menu makiety działają już wszystkie pozycje poza „Notatki z lekcji”
 i „Baza wiedzy” (faza 2, jeszcze nie ruszone).
@@ -58,12 +60,14 @@ Baza wiedzy, Wiadomości, Ustawienia.
 ## Kolejne fazy (nie teraz, ale schemat już to przewiduje)
 
 - **Faza 2 (zostało):** notatki z lekcji (szablon: co było / jak poszło / cel /
-  co dalej, z opcją kopiowania i wysyłki do ucznia), baza wiedzy per uczeń,
-  synchronizacja z Google Calendar (`Lesson.googleEventId` już zarezerwowane
-  w schemacie)
-- **Faza 3 (zostało):** eksport ewidencji do PIT-36, automatyczne wezwania do
-  zapłaty, pełne raporty — **to dotyka przepisów podatkowych; reguły/wzory do
-  zweryfikowania z księgowym przed wdrożeniem w produkcji**
+  co dalej, z opcją kopiowania i wysyłki do ucznia), baza wiedzy per uczeń
+- **Faza 3 (zostało):** automatyczne wezwania do zapłaty, pełne raporty —
+  **to dotyka przepisów podatkowych; reguły/wzory do zweryfikowania
+  z księgowym przed wdrożeniem w produkcji**
+- **Aplikacja mobilna (Android/iOS):** odłożona świadomie. Gdy wróci, pierwsze
+  do zrobienia jest uwierzytelnianie tokenem (dziś sesja to ciasteczko
+  httpOnly, którego apka nie użyje) i domknięcie REST-a: nie ma endpointów dla
+  wypłat, Speaking Clubu, dyspozycyjności ani zapisu przedmiotów
 - **Faza 4:** wsparcie AI przy wpisywaniu notatek z lekcji
 
 ## Start
@@ -263,6 +267,60 @@ Testy: `tests/payouts.test.ts`.
   przetestować bez płatnego konta.
 
 Testy: `tests/reminders.test.ts`.
+
+## Synchronizacja z Google Calendar
+
+`src/lib/services/calendar-sync.ts`, `src/lib/google/{oauth,calendar}.ts`.
+**Jednokierunkowo: CRM jest źródłem prawdy.** Zmiana zrobiona w Google nie
+wraca do bazy i UI mówi to wprost, żeby nikt nie przestawiał zajęć w telefonie.
+
+- każdy nauczyciel podłącza **własne** konto (`GoogleCalendarLink`, unikat na
+  `teacherId`); admin widzi stan i może wstrzymać albo rozłączyć, ale nie
+  zaloguje się za kogoś,
+- **zdarzenie nie zawiera żadnej kwoty** — ani ceny ucznia, ani stawki
+  nauczyciela. Kalendarz jest poza naszą kontrolą (współdzielenie, eksport,
+  powiadomienia), więc pieniądze tam nie trafiają,
+- „co wysłać" poznajemy po `Lesson.googleSyncedAt = null`. Znacznik zerują
+  **jawnie** funkcje z `lessons.ts` (zmiana terminu, statusu, tematu).
+  NIE porównujemy go z `updatedAt`, bo Prisma bumpuje `updatedAt` przy każdym
+  zapisie — także przy zapisie samego znacznika — i taka detekcja ścigałaby
+  się sama ze sobą,
+- lekcja odwołana jest **usuwana** z kalendarza (nie odbędzie się, nie ma po co
+  blokować terminu); zrealizowana i nieobecność zostają,
+- usunięcie lekcji zostawia nagrobek (`GoogleCalendarDeletion`) — po usunięciu
+  wiersza nie ma już skąd wziąć `googleEventId`, więc bez tego zdarzenie
+  zostałoby w kalendarzu na zawsze,
+- czas podajemy jako **ścienny + strefa** (`Europe/Warsaw`), nie jako UTC —
+  lekcja o 16:00 zostaje o 16:00 po zmianie czasu,
+- tokeny (`refreshToken`) nie opuszczają serwera i nie ma ich w żadnym DTO,
+- błąd jednego nauczyciela nie zatrzymuje pozostałych; ląduje
+  w `lastSyncError` i jest widoczny w jego karcie,
+- ostrzeżenie o brakujących kluczach **nie zasłania** stanu połączenia —
+  inaczej po rotacji kluczy nauczyciel nie miałby jak się rozłączyć,
+- `GOOGLE_CALENDAR_PROVIDER=log` (domyślne) nie rusza sieci — zapamiętuje
+  wywołania w pamięci, więc cały przepływ da się przetestować bez konta Google.
+
+Cron: `GET /api/cron/calendar` (ten sam `CRON_SECRET` co przypomnienia).
+Testy: `tests/calendar-sync.test.ts`.
+
+## Ewidencja przychodu (podkład pod PIT-36)
+
+`src/lib/services/evidence.ts`, panel `/admin/ewidencja`. Tylko ADMIN.
+
+Ta sama zasada co w NDG, tylko ostrzej: **nie ma tu ani jednej stawki
+podatkowej, kwoty wolnej ani wyliczonego podatku.** Moduł podaje wyłącznie to,
+co wynika z dokumentów — datę, dokument, ucznia, kwotę i sumę narastającą.
+W UI stoi jawne zastrzeżenie, że to zestawienie pomocnicze.
+
+- podstawę (`INVOICED` / `PAID`) bierzemy z `NdgSettings.revenueBasis`, żeby
+  ewidencja i pas ostrzegawczy limitu nigdy nie liczyły czegoś innego,
+- numeracja i suma narastająca idą przez **cały rok**, nie per miesiąc,
+- anulowany rachunek wypada z ewidencji (numeracja zaczyna się od nowa),
+- CSV: separator średnik, przecinek dziesiętny i BOM — inaczej polski Excel
+  rozjeżdża kolumny i łamie znaki; cudzysłowy w danych są podwajane,
+- wydruk ma własny nagłówek z danymi wystawcy, żeby obronił się na papierze.
+
+Testy: `tests/evidence.test.ts`.
 
 ## Moduł NDG (faza 3) — reguły
 

@@ -295,6 +295,35 @@ export async function createLessons(
  * pieniądze już wyszły, i wypłata przestałaby się zgadzać z czymkolwiek.
  * Wyjście awaryjne jest to samo co przy rachunku — admin cofa wypłatę.
  */
+/**
+ * Zapamiętuje zdarzenia Google po lekcjach, które zaraz znikną z bazy.
+ * Po usunięciu wiersza nie ma już skąd wziąć `googleEventId`, więc bez tego
+ * zdarzenie zostałoby w kalendarzu nauczyciela na zawsze.
+ */
+async function tombstoneGoogleEvents(
+  where: Prisma.LessonWhereInput
+): Promise<void> {
+  const synced = await prisma.lesson.findMany({
+    where: { ...where, googleEventId: { not: null } },
+    select: { teacherId: true, googleEventId: true },
+  });
+  if (synced.length === 0) return;
+
+  const calendars = await prisma.googleCalendarLink.findMany({
+    where: { teacherId: { in: synced.map((lesson) => lesson.teacherId) } },
+    select: { teacherId: true, calendarId: true },
+  });
+  const calendarFor = new Map(calendars.map((link) => [link.teacherId, link.calendarId]));
+
+  await prisma.googleCalendarDeletion.createMany({
+    data: synced.map((lesson) => ({
+      teacherId: lesson.teacherId,
+      googleEventId: lesson.googleEventId!,
+      calendarId: calendarFor.get(lesson.teacherId) ?? "primary",
+    })),
+  });
+}
+
 async function assertNotPaidOut(lessonId: string): Promise<void> {
   const lesson = await prisma.lesson.findUnique({
     where: { id: lessonId },
@@ -382,6 +411,9 @@ export async function updateLesson(
     update.detachedFromSeries = true;
   }
 
+  // Każda zmiana widoczna w kalendarzu wraca do kolejki wysyłki do Google.
+  update.googleSyncedAt = null;
+
   const updated = await prisma.lesson.update({
     where: { id },
     data: update,
@@ -426,6 +458,7 @@ export async function updateLesson(
           ...(data.durationMinutes !== undefined
             ? { durationMinutes: data.durationMinutes }
             : {}),
+          googleSyncedAt: null,
         },
       });
     }
@@ -502,6 +535,7 @@ export async function cancelLesson(
       cancellationAutoAmount: new Prisma.Decimal(autoAmount.toFixed(2)),
       cancellationAmount: new Prisma.Decimal(finalAmount.toFixed(2)),
       cancellationNote: data.note,
+      googleSyncedAt: null,
     },
     select: LESSON_SELECT,
   });
@@ -562,7 +596,7 @@ export async function setLessonTopic(
 
   const updated = await prisma.lesson.update({
     where: { id },
-    data: { topic },
+    data: { topic, googleSyncedAt: null },
     select: LESSON_SELECT,
   });
   return mapLesson(updated, actor);
@@ -587,6 +621,7 @@ export async function deleteLesson(actor: Actor, id: string): Promise<void> {
   if (!visible) throw new NotFoundError("Nie znaleziono lekcji.");
   await assertNotInvoiced(id);
   await assertNotPaidOut(id);
+  await tombstoneGoogleEvents({ id });
 
   const result = await prisma.lesson.deleteMany({ where });
   if (result.count === 0) throw new NotFoundError("Nie znaleziono lekcji.");
@@ -604,6 +639,7 @@ export async function deleteFutureSeries(
     scheduledAt: { gte: from },
     ...lessonScope(actor),
   };
+  await tombstoneGoogleEvents(where);
   const result = await prisma.lesson.deleteMany({ where });
   if (result.count === 0) throw new NotFoundError("Brak lekcji do usunięcia.");
   return result.count;

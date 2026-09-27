@@ -4,6 +4,11 @@ import { requirePage } from "@/lib/auth";
 import { getTeacher } from "@/lib/services/teachers";
 import { getTeacherRates } from "@/lib/services/subjects";
 import { getPayoutDue, listPayouts } from "@/lib/services/payouts";
+import {
+  getCalendarLink,
+  isCalendarConfigured,
+} from "@/lib/services/calendar-sync";
+import { GoogleCalendarCard } from "@/components/google-calendar-card";
 import { TeacherPayoutCard } from "@/components/teacher-payout-card";
 import { RateEditor } from "@/components/rate-editor";
 import { listStudents } from "@/lib/services/students";
@@ -33,12 +38,13 @@ export default async function AdminTeacherPage({
   });
 
   const monthKey = currentMonthKey();
-  const [students, earnings, rates, payoutDue, payouts] = await Promise.all([
+  const [students, earnings, rates, payoutDue, payouts, calendar] = await Promise.all([
     listStudents(actor, { teacherId: teacher.id }),
     getTeacherEarnings(actor, teacher.id, monthKey),
     getTeacherRates(actor, teacher.id),
     getPayoutDue(actor, teacher.id),
     listPayouts(actor, teacher.id),
+    getCalendarLink(actor, teacher.id),
   ]);
 
   return (
@@ -158,6 +164,13 @@ export default async function AdminTeacherPage({
             bankAccount={teacher.bankAccount}
             due={payoutDue}
             payouts={payouts}
+          />
+
+          <GoogleCalendarCard
+            link={calendar}
+            configured={isCalendarConfigured()}
+            teacherId={teacher.id}
+            canConnect={false}
           />
         </div>
 

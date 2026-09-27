@@ -58,6 +58,7 @@ model TeacherProfile {
   messages       MessageRecipient[]
   rates          TeacherRate[]
   payouts        Payout[]
+  googleCalendar GoogleCalendarLink?
 
   @@map("teacher_profiles")
 }
@@ -280,7 +281,13 @@ model Lesson {
   teacherPayoutId String?
   teacherPayout   Payout? @relation(fields: [teacherPayoutId], references: [id])
 
-  googleEventId String? // zarezerwowane pod przyszłą synchronizację z Google Calendar
+  /// Zdarzenie w kalendarzu Google nauczyciela, jeśli lekcja tam poszła.
+  googleEventId String?
+
+  /// Kiedy lekcja została wypchnięta do Google. `null` albo wartość starsza
+  /// niż `updatedAt` oznacza, że zmiana czeka na wysłanie — stąd cron wie,
+  /// co dosłać, bez osobnej kolejki.
+  googleSyncedAt DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -289,7 +296,61 @@ model Lesson {
   invoiceItem InvoiceItem? // lekcja może trafić tylko na jeden rachunek
   reminders   ReminderLog[]
 
+  @@index([googleSyncedAt])
   @@map("lessons")
+}
+
+// ---------- SYNCHRONIZACJA Z GOOGLE CALENDAR ----------
+// Jednokierunkowo: CRM jest źródłem prawdy, Google tylko odzwierciedla grafik.
+// Każdy nauczyciel podłącza WŁASNE konto i widzi wyłącznie swoje lekcje.
+
+/// Połączenie konta Google jednego nauczyciela.
+///
+/// `refreshToken` to sekret — trzymamy go, bo bez niego nie da się odświeżyć
+/// dostępu, ale nie opuszcza on serwera i nie trafia do żadnego DTO.
+model GoogleCalendarLink {
+  id        String         @id @default(cuid())
+  teacherId String         @unique
+  teacher   TeacherProfile @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+
+  /// Adres konta Google — pokazujemy go, żeby było widać, co jest podłączone.
+  googleEmail String
+  /// Kalendarz docelowy; "primary" to główny kalendarz konta.
+  calendarId  String @default("primary")
+
+  refreshToken String
+  accessToken  String?
+  /// Do kiedy `accessToken` jest ważny; po tym czasie odświeżamy go sami.
+  expiresAt    DateTime?
+
+  /// Wyłączenie bez rozłączania konta — lekcje przestają się wypychać.
+  enabled Boolean @default(true)
+
+  lastSyncAt    DateTime?
+  lastSyncError String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("google_calendar_links")
+}
+
+/// Nagrobek po lekcji usuniętej z CRM-a.
+///
+/// Po usunięciu wiersza lekcji nie ma już skąd wziąć `googleEventId`, więc
+/// zapisujemy go tutaj i cron dokańcza usunięcie zdarzenia w Google.
+model GoogleCalendarDeletion {
+  id            String @id @default(cuid())
+  teacherId     String
+  googleEventId String
+  calendarId    String @default("primary")
+
+  attempts  Int      @default(0)
+  lastError String?
+  createdAt DateTime @default(now())
+
+  @@index([teacherId])
+  @@map("google_calendar_deletions")
 }
 
 // ---------- NOTATKI Z LEKCJI ----------

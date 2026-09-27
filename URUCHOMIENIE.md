@@ -91,8 +91,8 @@ node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
 Zostaw też `SEED_ADMIN_EMAIL` i `SEED_ADMIN_PASSWORD` — to dane konta
 administratora, którym się zalogujesz.
 
-Reszty zmiennych z `.env.example` (`CRON_SECRET`, `TELEGRAM_*`, `SMS_*`) do
-testów na własnym komputerze **nie musisz uzupełniać** — dotyczą wysyłki
+Reszty zmiennych z `.env.example` (`CRON_SECRET`, `TELEGRAM_*`, `SMS_*`,
+`GOOGLE_*`) do testów na własnym komputerze **nie musisz uzupełniać** — dotyczą wysyłki
 przypomnień i przydadzą się dopiero na produkcji. Bez nich aplikacja działa
 normalnie, a próba wysyłki zapisuje w bazie czytelny błąd zamiast się wywalać.
 
@@ -162,6 +162,13 @@ stawek uczniów ani danych Piotra, a administrator widzi wszystko.
   wypłatę oznaczasz w karcie nauczyciela.
 - **Panel nauczyciela → Moje wypłaty** — kwota oczekująca i historia wypłat
   (bez informacji, kto je oznaczył).
+- **Panel admina → Ewidencja przychodu** — zestawienie roku do PIT-36:
+  przejdź się strzałkami po latach, pobierz CSV i zobacz wydruk. Zwróć uwagę,
+  że nie ma tam ani jednej stawki podatkowej — to celowe.
+- **Kalendarz Google** — bez kluczy Google karta w Ustawieniach powie, czego
+  brakuje, i to wszystko. Żeby zobaczyć synchronizację bez zakładania konta,
+  zostaw `GOOGLE_CALENDAR_PROVIDER="log"` — wtedy wysyłka nic nie wysyła,
+  tylko zapisuje, co by poszło.
 
 ---
 
