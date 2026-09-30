@@ -29,15 +29,16 @@ export async function checkLock(
   return { locked: false };
 }
 
+/** Zwraca `true`, gdy ta właśnie próba włączyła blokadę — do dziennika. */
 export async function registerFailedLogin(
   userId: string,
   now = new Date()
-): Promise<void> {
+): Promise<boolean> {
   const user = await prisma.user.findUnique({
     where: { id: userId },
     select: { failedLogins: true, lockedUntil: true },
   });
-  if (!user) return;
+  if (!user) return false;
 
   // Po wygaśnięciu blokady liczymy od nowa.
   const expired = user.lockedUntil !== null && user.lockedUntil <= now;
@@ -55,6 +56,8 @@ export async function registerFailedLogin(
           : user.lockedUntil,
     },
   });
+
+  return locked;
 }
 
 export async function registerSuccessfulLogin(userId: string): Promise<void> {

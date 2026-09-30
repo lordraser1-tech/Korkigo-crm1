@@ -31,7 +31,8 @@ export async function resetDatabase(): Promise<void> {
      "ndg_monthly_limits", "ndg_settings",
      "payments", "invoice_items", "invoices", "billing_settings",
      "speaking_club_uses", "lesson_notes", "knowledge_base_entries",
-     "reminder_logs", "google_calendar_deletions", "google_calendar_links",
+     "reminder_logs", "security_events",
+     "google_calendar_deletions", "google_calendar_links",
      "lessons", "payouts", "telegram_link_tokens",
      "student_rates", "teacher_rates", "subject_levels", "subjects",
      "availability_slots", "students", "teacher_profiles", "users"

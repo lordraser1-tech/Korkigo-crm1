@@ -15,6 +15,7 @@ const NAV: NavItem[] = [
   { href: "/admin/ustawienia", label: "Ustawienia" },
   { href: "/admin/ndg", label: "Limit NDG" },
     { href: "/admin/ewidencja", label: "Ewidencja przychodu" },
+    { href: "/admin/bezpieczenstwo", label: "Bezpieczeństwo" },
 ];
 
 export default async function AdminLayout({

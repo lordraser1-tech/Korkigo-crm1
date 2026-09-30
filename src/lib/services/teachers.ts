@@ -2,6 +2,7 @@ import { Prisma } from "@prisma/client";
 import { z } from "zod";
 import type { Actor } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { recordSecurityEvent } from "@/lib/services/security-log";
 import { ForbiddenError, NotFoundError, ValidationError } from "@/lib/errors";
 import { hashPassword, verifyPassword } from "@/lib/password";
 import {
@@ -205,7 +206,15 @@ export async function setTeacherPassword(
       passwordHash: await hashPassword(newPassword),
       // Reset hasła przez admina wylogowuje nauczyciela ze wszystkich urządzeń.
       sessionsValidFrom: new Date(),
+      failedLogins: 0,
+      lockedUntil: null,
     },
+  });
+
+  await recordSecurityEvent({
+    type: "PASSWORD_RESET",
+    userId: teacher.userId,
+    detail: `ustawione przez ${actor.email}`,
   });
 }
 
@@ -229,6 +238,12 @@ export async function changeOwnPassword(
       passwordHash: await hashPassword(data.newPassword),
       sessionsValidFrom: new Date(),
     },
+  });
+
+  await recordSecurityEvent({
+    type: "PASSWORD_CHANGED",
+    userId: actor.userId,
+    email: actor.email,
   });
 }
 

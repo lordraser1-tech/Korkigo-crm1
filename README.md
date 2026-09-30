@@ -507,11 +507,18 @@ Stan po przeglądzie przed wdrożeniem:
   `Referrer-Policy`, `Permissions-Policy`, HSTS na produkcji,
 - endpointy crona i webhooka Telegrama chroni sekret ze środowiska.
 
+- limit zapytań na całym `/api/*`: 120/min, a na logowaniu 10/min (odpowiedź
+  429 z nagłówkiem `Retry-After`). Panel chodzi na Server Actions, więc
+  zwykłego użytkownika to nie dotyka,
+- dziennik zdarzeń w `/admin/bezpieczenstwo`: logowania udane i nieudane,
+  blokady kont, zmiany haseł, adresy z największą liczbą prób. Wpisy starsze
+  niż 90 dni kasują się same.
+
 Czego **nie** ma i warto o tym wiedzieć przed wystawieniem na świat:
 
-- brak globalnego limitu zapytań (blokada dotyczy logowania, nie całego API) —
-  przed proxy typu Cloudflare to zwykle wystarcza, bez niego rozważ limit na
-  poziomie hostingu,
+- licznik limitu żyje w pamięci procesu — zeruje się przy restarcie i nie jest
+  współdzielony między instancjami. Dla jednego serwera wystarcza; przy kilku
+  albo za CDN-em dołóż limit po stronie hostingu,
 - `script-src` w CSP ma `'unsafe-inline'`, bo Next wstrzykuje inline'owe skrypty
   hydracji bez nonce'a; CSP nadal odcina skrypty z obcych domen,
 - nie ma dwuskładnikowego logowania ani dziennika logowań,

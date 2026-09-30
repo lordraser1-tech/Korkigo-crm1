@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { runReminderBatch } from "@/lib/services/reminders";
+import { pruneSecurityLog } from "@/lib/services/security-log";
 
 /**
  * Wysyłka przypomnień — odpalana co godzinę przez cron hostingu.
@@ -27,5 +28,8 @@ export async function GET(request: Request) {
   }
 
   const result = await runReminderBatch();
-  return NextResponse.json({ data: result });
+  // Przy okazji sprzątamy stare wpisy dziennika — IP to dane osobowe,
+  // nie trzymamy ich bez końca.
+  const pruned = await pruneSecurityLog();
+  return NextResponse.json({ data: { ...result, prunedSecurityEvents: pruned } });
 }

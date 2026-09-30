@@ -40,6 +40,7 @@ model User {
   sentMessages   Message[]
   speakingClubs  SpeakingClubUse[]
   payouts        Payout[]
+  securityEvents SecurityEvent[]
 
   @@map("users")
 }
@@ -656,6 +657,48 @@ model ReminderLog {
   @@unique([lessonId])
   @@index([sentAt])
   @@map("reminder_logs")
+}
+
+// ---------- DZIENNIK ZDARZEŃ BEZPIECZEŃSTWA ----------
+
+enum SecurityEventType {
+  LOGIN_OK
+  LOGIN_FAILED
+  LOGIN_BLOCKED // próba na koncie będącym w blokadzie
+  ACCOUNT_LOCKED // przekroczony próg nieudanych prób
+  PASSWORD_CHANGED // właściciel zmienił swoje hasło
+  PASSWORD_RESET // admin ustawił hasło nauczycielowi
+  TEACHER_DEACTIVATED
+}
+
+/// Ślad po zdarzeniach logowania i zmianach haseł.
+///
+/// Bez tego nie da się zauważyć, że ktoś systematycznie próbuje się dostać —
+/// blokada konta działa po cichu. Dziennik czyta wyłącznie admin.
+///
+/// NIE zapisujemy tu haseł ani tokenów. Adres IP trzymamy jako dane potrzebne
+/// do wykrycia nadużycia i kasujemy razem ze starymi wpisami.
+model SecurityEvent {
+  id   String            @id @default(cuid())
+  type SecurityEventType
+
+  /// Konto, którego dotyczy zdarzenie — `null`, gdy adres nie istnieje.
+  userId String?
+  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  /// Adres z próby logowania. Trzymamy go osobno, bo przy nieistniejącym
+  /// koncie nie ma do czego się podpiąć.
+  email String?
+
+  ip        String?
+  userAgent String?
+  detail    String?
+
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([type, createdAt])
+  @@map("security_events")
 }
 
 /// Jednorazowy token do połączenia konta Telegram ucznia z botem.

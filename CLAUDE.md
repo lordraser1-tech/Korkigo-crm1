@@ -347,7 +347,24 @@ Testy: `tests/evidence.test.ts`.
   `frame-ancestors 'none'`: panel z cenami i rozliczeniami nie ma powodu dać
   się osadzić w cudzej ramce. HSTS włącza się tylko na produkcji.
 
-Testy: `tests/security.test.ts`.
+- **limit zapytań siedzi w `src/middleware.ts`**, nie w poszczególnych trasach —
+  obejmuje też te dopisane w przyszłości. Logowanie ma ostrzejszy próg
+  (10/min) niż reszta API (120/min); cron i webhook Telegrama są pominięte,
+  bo chroni je sekret i biją z jednego adresu. Licznik żyje w pamięci procesu
+  i zeruje się przy restarcie — przy kilku instancjach dołóż limit hostingu,
+- **każde logowanie i zmiana hasła trafia do `SecurityEvent`**
+  (`src/lib/services/security-log.ts`, panel `/admin/bezpieczenstwo`).
+  Blokada konta działa po cichu, więc bez dziennika nie da się zauważyć, że
+  ktoś systematycznie próbuje wejść. Zapis **nigdy nie przerywa** operacji,
+  którą opisuje: nieudane logowanie ma zwrócić „złe hasło", a nie 500 dlatego,
+  że nie udało się dopisać wpisu,
+- w dzienniku **nie ma haseł ani tokenów**; adres IP kasuje się po
+  `SECURITY_LOG_DAYS` (90) przy okazji crona przypomnień,
+- reset hasła przez admina **zdejmuje blokadę konta** — inaczej nauczyciel
+  dalej nie mógłby wejść nowym hasłem.
+
+Testy: `tests/security.test.ts`, `tests/rate-limit.test.ts`,
+`tests/security-log.test.ts`.
 
 ## Moduł NDG (faza 3) — reguły
 
