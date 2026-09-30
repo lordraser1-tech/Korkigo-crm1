@@ -6,6 +6,13 @@ import { verifyPassword, hashPassword } from "@/lib/password";
 import { createSessionCookie, clearSessionCookie } from "@/lib/session";
 import { loginSchema } from "@/lib/validation";
 import { homePathFor } from "@/lib/auth";
+import { safeNextPath } from "@/lib/safe-redirect";
+import {
+  LOCK_MINUTES,
+  checkLock,
+  registerFailedLogin,
+  registerSuccessfulLogin,
+} from "@/lib/services/login-guard";
 import { type ActionState, toActionState } from "@/lib/action-result";
 
 // Stały hash porównawczy — nieistniejący e-mail kosztuje tyle samo czasu co zły
@@ -33,20 +40,29 @@ export async function loginAction(
       },
     });
 
+    // Blokadę sprawdzamy PRZED porównaniem hasła, ale komunikat zostaje ten
+    // sam dla nieistniejącego konta — nie podpowiadamy, które adresy istnieją.
+    if (user && (await checkLock(user.id)).locked) {
+      return {
+        ok: false,
+        message: `Zbyt wiele nieudanych prób. Spróbuj ponownie za ${LOCK_MINUTES} minut.`,
+      };
+    }
+
     const hash = user?.passwordHash ?? (await DUMMY_HASH_PROMISE);
     const passwordOk = await verifyPassword(data.password, hash);
 
     if (!user || !passwordOk) {
+      if (user) await registerFailedLogin(user.id);
       return { ok: false, message: "Nieprawidłowy e-mail lub hasło." };
     }
     if (user.role === "TEACHER" && !user.teacherProfile?.active) {
       return { ok: false, message: "Konto jest nieaktywne. Skontaktuj się z administratorem." };
     }
 
+    await registerSuccessfulLogin(user.id);
     await createSessionCookie({ userId: user.id, role: user.role });
-    const next = formData.get("next");
-    const wanted = typeof next === "string" && next.startsWith("/") ? next : null;
-    target = wanted ?? homePathFor(user.role);
+    target = safeNextPath(formData.get("next")) ?? homePathFor(user.role);
   } catch (error) {
     return toActionState(error);
   }

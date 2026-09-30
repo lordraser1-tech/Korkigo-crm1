@@ -201,7 +201,11 @@ export async function setTeacherPassword(
 
   await prisma.user.update({
     where: { id: teacher.userId },
-    data: { passwordHash: await hashPassword(newPassword) },
+    data: {
+      passwordHash: await hashPassword(newPassword),
+      // Reset hasła przez admina wylogowuje nauczyciela ze wszystkich urządzeń.
+      sessionsValidFrom: new Date(),
+    },
   });
 }
 
@@ -221,7 +225,10 @@ export async function changeOwnPassword(
 
   await prisma.user.update({
     where: { id: actor.userId },
-    data: { passwordHash: await hashPassword(data.newPassword) },
+    data: {
+      passwordHash: await hashPassword(data.newPassword),
+      sessionsValidFrom: new Date(),
+    },
   });
 }
 

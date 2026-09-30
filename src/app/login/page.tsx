@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { getActor, homePathFor } from "@/lib/auth";
 import { LoginForm } from "./login-form";
+import { safeNextPath } from "@/lib/safe-redirect";
 
 export default async function LoginPage({
   searchParams,
@@ -28,7 +29,7 @@ export default async function LoginPage({
           <p className="mb-5 text-sm text-slate-500">
             Zaloguj się kontem administratora lub nauczyciela.
           </p>
-          <LoginForm next={next ?? null} />
+          <LoginForm next={safeNextPath(next)} />
         </div>
       </div>
     </main>

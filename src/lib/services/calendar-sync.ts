@@ -13,6 +13,7 @@
 import { SignJWT, jwtVerify } from "jose";
 import type { Actor } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { decryptSecret, encryptSecret } from "@/lib/crypto";
 import { ForbiddenError, NotFoundError, ValidationError } from "@/lib/errors";
 import { APP_TIME_ZONE, toWallClockInput } from "@/lib/datetime";
 import {
@@ -151,8 +152,8 @@ export async function finishCalendarConnect(
     where: { teacherId },
     update: {
       googleEmail,
-      refreshToken: tokens.refreshToken,
-      accessToken: tokens.accessToken,
+      refreshToken: encryptSecret(tokens.refreshToken),
+      accessToken: encryptSecret(tokens.accessToken),
       expiresAt: tokens.expiresAt,
       enabled: true,
       lastSyncError: null,
@@ -160,8 +161,8 @@ export async function finishCalendarConnect(
     create: {
       teacherId,
       googleEmail,
-      refreshToken: tokens.refreshToken,
-      accessToken: tokens.accessToken,
+      refreshToken: encryptSecret(tokens.refreshToken),
+      accessToken: encryptSecret(tokens.accessToken),
       expiresAt: tokens.expiresAt,
     },
   });
@@ -294,15 +295,17 @@ async function accessTokenFor(link: {
     link.accessToken &&
     link.expiresAt &&
     link.expiresAt.getTime() - REFRESH_MARGIN_MS > Date.now();
-  if (fresh) return link.accessToken!;
+  if (fresh) return decryptSecret(link.accessToken!);
 
-  const tokens = await refreshAccessToken(link.refreshToken);
+  const tokens = await refreshAccessToken(decryptSecret(link.refreshToken));
   await prisma.googleCalendarLink.update({
     where: { teacherId: link.teacherId },
     data: {
-      accessToken: tokens.accessToken,
+      accessToken: encryptSecret(tokens.accessToken),
       expiresAt: tokens.expiresAt,
-      ...(tokens.refreshToken ? { refreshToken: tokens.refreshToken } : {}),
+      ...(tokens.refreshToken
+        ? { refreshToken: encryptSecret(tokens.refreshToken) }
+        : {}),
     },
   });
   return tokens.accessToken;

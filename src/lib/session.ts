@@ -8,6 +8,8 @@ const MAX_AGE_SECONDS = 60 * 60 * 24 * 7; // 7 dni
 export type SessionPayload = {
   userId: string;
   role: Role;
+  /** Moment wydania tokenu — porównywany z `User.sessionsValidFrom`. */
+  issuedAt?: Date;
 };
 
 function secret(): Uint8Array {
@@ -38,7 +40,11 @@ export async function verifySession(
     });
     if (typeof payload.sub !== "string") return null;
     if (payload.role !== "ADMIN" && payload.role !== "TEACHER") return null;
-    return { userId: payload.sub, role: payload.role };
+    return {
+      userId: payload.sub,
+      role: payload.role,
+      issuedAt: payload.iat ? new Date(payload.iat * 1000) : undefined,
+    };
   } catch {
     return null;
   }

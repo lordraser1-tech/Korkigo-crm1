@@ -322,6 +322,33 @@ W UI stoi jawne zastrzeżenie, że to zestawienie pomocnicze.
 
 Testy: `tests/evidence.test.ts`.
 
+## Bezpieczeństwo — reguły, których nie wolno cofnąć
+
+- **powrót po zalogowaniu przechodzi przez `safeNextPath()`** (`src/lib/safe-redirect.ts`).
+  Samo `startsWith("/")` NIE wystarcza: `//evil.pl` i `/\evil.pl` przeglądarka
+  traktuje jak adres bezwzględny, więc `?next=` wyprowadzał użytkownika
+  z serwisu zaraz po podaniu hasła,
+- **zmiana hasła unieważnia sesje** — `User.sessionsValidFrom` przesuwa się przy
+  każdej zmianie, a `getActor()` odrzuca token z wcześniejszym `iat`. Bez tego
+  wykradzione ciasteczko żyło do wygaśnięcia mimo zmienionego hasła. Przy
+  zmianie WŁASNEGO hasła wydajemy od razu nową sesję, żeby nie wylogować
+  bieżącej przeglądarki,
+- **blokada po `MAX_FAILED_LOGINS` próbach** (`src/lib/services/login-guard.ts`)
+  jest czasowa i krótka. Trwałe zamknięcie konta byłoby narzędziem do odcięcia
+  nauczyciela od pracy cudzymi próbami,
+- **obie ścieżki logowania porównują hash także dla nieistniejącego konta**
+  (stały `DUMMY_HASH_PROMISE`) i zwracają ten sam komunikat — inaczej czas
+  odpowiedzi zdradzałby, które adresy istnieją,
+- **sekrety w bazie są szyfrowane** (`src/lib/crypto.ts`, AES-256-GCM).
+  Dotyczy tokenów Google: wyciek samej bazy nie może dawać dostępu do cudzych
+  kalendarzy. Wartość bez prefiksu `v1:` czytamy jako jawną, żeby wdrożenie
+  nie zerwało istniejących połączeń,
+- **nagłówki bezpieczeństwa siedzą w `next.config.ts`** — najważniejszy jest
+  `frame-ancestors 'none'`: panel z cenami i rozliczeniami nie ma powodu dać
+  się osadzić w cudzej ramce. HSTS włącza się tylko na produkcji.
+
+Testy: `tests/security.test.ts`.
+
 ## Moduł NDG (faza 3) — reguły
 
 `src/lib/services/ndg.ts`, panel `/admin/ndg`. Tylko ADMIN.

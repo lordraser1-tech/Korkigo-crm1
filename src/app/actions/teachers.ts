@@ -17,6 +17,7 @@ import {
   toActionState,
   type ActionState,
 } from "@/lib/action-result";
+import { createSessionCookie } from "@/lib/session";
 import { revalidatePanels } from "./shared";
 
 export async function createTeacherAction(
@@ -79,7 +80,13 @@ export async function changeOwnPasswordAction(
   try {
     const actor = await requireActor();
     await changeOwnPassword(actor, formToObject(formData) as never);
-    return { ok: true, message: "Hasło zostało zmienione." };
+    // Zmiana hasła unieważnia wszystkie sesje, więc bieżącej przeglądarce
+    // wydajemy nową — pozostałe urządzenia zostają wylogowane.
+    await createSessionCookie({ userId: actor.userId, role: actor.role });
+    return {
+      ok: true,
+      message: "Hasło zmienione. Pozostałe urządzenia zostały wylogowane.",
+    };
   } catch (error) {
     return toActionState(error);
   }

@@ -18,12 +18,23 @@ enum Role {
 }
 
 model User {
-  id           String   @id @default(cuid())
-  email        String   @unique
+  id           String @id @default(cuid())
+  email        String @unique
   passwordHash String
   role         Role
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+
+  /// Sesje wydane PRZED tą chwilą są nieważne. Ustawiamy ją przy każdej
+  /// zmianie hasła, żeby wykradzione ciasteczko przestawało działać —
+  /// bez tego token żyłby do wygaśnięcia mimo zmienionego hasła.
+
+  /// Ochrona przed zgadywaniem hasła. Licznik zeruje się po udanym logowaniu,
+  /// a blokada jest KRÓTKA i tylko czasowa — trwałe zamknięcie konta dałoby
+  /// się wykorzystać do odcięcia nauczyciela od pracy cudzymi próbami.
+  failedLogins      Int       @default(0)
+  lockedUntil       DateTime?
+  sessionsValidFrom DateTime  @default(now())
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
   teacherProfile TeacherProfile?
   sentMessages   Message[]

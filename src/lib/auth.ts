@@ -42,10 +42,21 @@ export const getActor = cache(async (): Promise<Actor | null> => {
       id: true,
       email: true,
       role: true,
+      sessionsValidFrom: true,
       teacherProfile: { select: { id: true, active: true } },
     },
   });
   if (!user) return null;
+
+  // Token wydany przed ostatnią zmianą hasła jest nieważny — inaczej zmiana
+  // hasła nie odbierałaby dostępu komuś, kto ma wykradzione ciasteczko.
+  // Sekunda zapasu: `iat` w JWT ma rozdzielczość sekundową.
+  if (
+    session.issuedAt &&
+    session.issuedAt.getTime() < user.sessionsValidFrom.getTime() - 1000
+  ) {
+    return null;
+  }
 
   if (user.role === "ADMIN") {
     return {

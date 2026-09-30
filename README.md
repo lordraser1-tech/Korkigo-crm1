@@ -489,6 +489,36 @@ konwersji czasu).
 | `npm run db:reset` | czyści bazę i wgrywa świeże demo |
 | `npm run db:studio` | Prisma Studio |
 
+## Bezpieczeństwo
+
+Stan po przeglądzie przed wdrożeniem:
+
+- uprawnienia egzekwowane w warstwie serwisowej, nie w UI (osobny rozdział wyżej),
+- hasła: bcrypt z kosztem 12; blokada konta na 15 minut po 10 nieudanych próbach —
+  czasowa, bo trwała pozwalałaby odciąć nauczyciela od pracy cudzymi próbami,
+- logowanie nie zdradza, które konta istnieją: ten sam komunikat i ten sam czas
+  odpowiedzi dla nieistniejącego adresu,
+- sesja to podpisany JWT w ciasteczku `httpOnly`, `sameSite=lax`, `secure`
+  na produkcji; **zmiana hasła unieważnia wszystkie wcześniejsze sesje**,
+- powrót po zalogowaniu (`?next=`) przechodzi przez filtr odcinający adresy
+  bezwzględne, także te protokołowo-względne (`//evil.pl`),
+- tokeny Google leżą w bazie zaszyfrowane (AES-256-GCM, klucz ze środowiska),
+- nagłówki: CSP z `frame-ancestors 'none'`, `X-Frame-Options`, `nosniff`,
+  `Referrer-Policy`, `Permissions-Policy`, HSTS na produkcji,
+- endpointy crona i webhooka Telegrama chroni sekret ze środowiska.
+
+Czego **nie** ma i warto o tym wiedzieć przed wystawieniem na świat:
+
+- brak globalnego limitu zapytań (blokada dotyczy logowania, nie całego API) —
+  przed proxy typu Cloudflare to zwykle wystarcza, bez niego rozważ limit na
+  poziomie hostingu,
+- `script-src` w CSP ma `'unsafe-inline'`, bo Next wstrzykuje inline'owe skrypty
+  hydracji bez nonce'a; CSP nadal odcina skrypty z obcych domen,
+- nie ma dwuskładnikowego logowania ani dziennika logowań,
+- `npm audit` zgłasza podatności `postcss` ciągnięte przez Next. Dotyczą
+  przetwarzania CSS w czasie builda, a nie danych od użytkowników — aktualizuj
+  Next w ramach wersji 15.x, gdy wyjdzie poprawka.
+
 ## Wdrożenie
 
 Potrzebny jest Postgres i host uruchamiający Node (Railway, Vercel + Neon/Supabase).
