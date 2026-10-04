@@ -29,6 +29,7 @@ import {
   billingSettingsSchema,
   lessonInvoiceSchema,
   monthlyInvoiceSchema,
+  outstandingInvoiceSchema,
   packageInvoiceSchema,
   paymentSchema,
 } from "@/lib/validation";
@@ -595,17 +596,18 @@ export async function createMonthlyInvoice(
  */
 export async function createInvoiceForOutstandingLessons(
   actor: Actor,
-  input: { studentId: string; issuedAt?: string; dueDays?: number; note?: string }
+  input: z.input<typeof outstandingInvoiceSchema>
 ): Promise<InvoiceDto> {
   assertAdmin(actor);
-  const student = await loadStudentForBilling(input.studentId);
+  const data = outstandingInvoiceSchema.parse(input);
+  const student = await loadStudentForBilling(data.studentId);
   const lessons = await billableLessons(student.id);
 
   if (lessons.length === 0) {
     throw new ValidationError("Uczeń nie ma nierozliczonych lekcji.");
   }
 
-  const { issuedAt, dueAt } = await resolveDates(input.issuedAt, input.dueDays);
+  const { issuedAt, dueAt } = await resolveDates(data.issuedAt, data.dueDays);
 
   return createInvoice({
     studentId: student.id,
@@ -613,7 +615,7 @@ export async function createInvoiceForOutstandingLessons(
     dueAt,
     periodStart: lessons[0].scheduledAt,
     periodEnd: lessons[lessons.length - 1].scheduledAt,
-    note: input.note ?? null,
+    note: data.note,
     items: lessons.map((lesson) => ({
       description: `${lesson.label} — ${lessonLabel(lesson.scheduledAt)}${
         STATUS_SUFFIX[lesson.status] ?? ""

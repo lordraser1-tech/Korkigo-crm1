@@ -14,6 +14,7 @@ import { toAmount } from "@/lib/money";
 import {
   studentRateSchema,
   subjectLevelSchema,
+  subjectLevelUpdateSchema,
   subjectSchema,
   teacherRateSchema,
 } from "@/lib/validation";
@@ -194,9 +195,10 @@ export async function createSubjectLevel(
 export async function updateSubjectLevel(
   actor: Actor,
   id: string,
-  input: { name?: string; active?: boolean }
+  input: z.input<typeof subjectLevelUpdateSchema>
 ): Promise<void> {
   assertAdmin(actor, "Poziomy edytuje administrator.");
+  const parsed = subjectLevelUpdateSchema.parse(input);
   const exists = await prisma.subjectLevel.findUnique({
     where: { id },
     select: { id: true },
@@ -204,12 +206,8 @@ export async function updateSubjectLevel(
   if (!exists) throw new NotFoundError("Nie znaleziono poziomu.");
 
   const data: Prisma.SubjectLevelUpdateInput = {};
-  if (input.name !== undefined) {
-    const name = input.name.trim();
-    if (!name) throw new ValidationError("Podaj nazwę poziomu.");
-    data.name = name;
-  }
-  if (input.active !== undefined) data.active = input.active;
+  if (parsed.name !== undefined) data.name = parsed.name;
+  if (parsed.active !== undefined) data.active = parsed.active;
   await prisma.subjectLevel.update({ where: { id }, data });
 }
 

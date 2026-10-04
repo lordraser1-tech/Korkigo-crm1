@@ -18,6 +18,73 @@ export const amountSchema = z
     message: "Maksymalnie dwa miejsca po przecinku.",
   });
 
+// ---------- DATY I GODZINY ----------
+
+/**
+ * Sam kształt (`RRRR-MM-DD`) to za mało. `2026-13-45` przechodzi przez
+ * wyrażenie regularne, a `Date.UTC(2026, 12, 45)` po cichu przewija to na
+ * 2027-02-14 — operacja wykonuje się wtedy na zupełnie innym dniu niż ten,
+ * który podał użytkownik, i nikt tego nie zauważa. Dlatego sprawdzamy, czy
+ * taki dzień w ogóle istnieje w kalendarzu.
+ */
+function isRealDate(value: string): boolean {
+  const [y, m, d] = value.split("-").map(Number);
+  // Kształtu pilnuje wyrażenie regularne — przy śmieciach nie dokładamy
+  // drugiego komunikatu o tym samym.
+  if (!Number.isInteger(y) || !Number.isInteger(m) || !Number.isInteger(d)) return true;
+  if (m < 1 || m > 12 || d < 1 || d > 31) return false;
+  const probe = new Date(Date.UTC(y, m - 1, d));
+  // Przewinięcie (np. 31 lutego) zmienia miesiąc — porównanie je wyłapie.
+  return probe.getUTCFullYear() === y && probe.getUTCMonth() === m - 1 && probe.getUTCDate() === d;
+}
+
+const isRealTime = (value: string) => {
+  const [h, min] = value.split(":").map(Number);
+  if (!Number.isInteger(h) || !Number.isInteger(min)) return true;
+  return h <= 23 && min <= 59;
+};
+
+/** „2026-09-20" — dzień, który naprawdę istnieje. */
+export const isoDate = trimmed
+  .regex(/^\d{4}-\d{2}-\d{2}$/, "Podaj datę w formacie RRRR-MM-DD.")
+  .refine(isRealDate, { message: "Taka data nie istnieje w kalendarzu." });
+
+/** „2026-09-20T16:00" — dzień i godzina z zegara ściennego. */
+export const wallClock = trimmed
+  .regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/, "Podaj datę i godzinę.")
+  .refine((v) => isRealDate(v.slice(0, 10)), {
+    message: "Taka data nie istnieje w kalendarzu.",
+  })
+  .refine((v) => isRealTime(v.slice(11)), { message: "Taka godzina nie istnieje." });
+
+/** „16:00" — sama godzina, bez dnia. */
+export const timeOfDay = trimmed
+  .regex(/^\d{2}:\d{2}$/, "Godzina w formacie 16:00.")
+  .refine(isRealTime, { message: "Taka godzina nie istnieje." });
+
+/** „2026-09" — miesiąc rozliczeniowy. */
+export const monthKeySchema = trimmed
+  .regex(/^\d{4}-\d{2}$/, "Podaj miesiąc w formacie RRRR-MM.")
+  .refine((v) => {
+    const month = Number(v.slice(5));
+    return month >= 1 && month <= 12;
+  }, { message: "Miesiąc musi być z zakresu 01-12." });
+
+/**
+ * Pole typu „tak/nie". Świadomie NIE używamy `z.coerce.boolean()`: formularz
+ * przysyła tekst, a `Boolean("false")` to `true` — przełącznik działałby wtedy
+ * tylko w jedną stronę.
+ */
+const flag = z
+  .union([z.boolean(), z.literal("true"), z.literal("false")])
+  .transform((v) => v === true || v === "true");
+
+/** Puste pole daty traktujemy jak brak wartości — tak samo jak w `optionalText`. */
+const optionalDate = <T extends z.ZodTypeAny>(base: T) =>
+  z
+    .union([base, z.literal(""), z.null(), z.undefined()])
+    .transform((v) => (v === "" || v === null || v === undefined ? null : (v as string)));
+
 export const loginSchema = z.object({
   email: trimmed.toLowerCase().email("Podaj poprawny adres e-mail."),
   password: z.string().min(1, "Podaj hasło."),
@@ -80,11 +147,6 @@ export const lessonStatusSchema = z.enum([
   "NO_SHOW",
 ]);
 
-const wallClock = trimmed.regex(
-  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/,
-  "Podaj datę i godzinę lekcji."
-);
-
 export const lessonCreateSchema = z
   .object({
     studentId: trimmed.min(1, "Wybierz ucznia."),
@@ -128,19 +190,20 @@ export const billingModeSchema = z.enum(["POSTPAID", "PER_LESSON", "PREPAID"]);
 
 export const paymentMethodSchema = z.enum(["TRANSFER", "CASH", "BLIK", "OTHER"]);
 
-const isoDate = trimmed.regex(
-  /^\d{4}-\d{2}-\d{2}$/,
-  "Podaj datę w formacie RRRR-MM-DD."
-);
-
-export const monthKeySchema = trimmed.regex(
-  /^\d{4}-\d{2}$/,
-  "Podaj miesiąc w formacie RRRR-MM."
-);
-
 export const monthlyInvoiceSchema = z.object({
   studentId: trimmed.min(1, "Wybierz ucznia."),
   month: monthKeySchema,
+  issuedAt: isoDate.optional(),
+  dueDays: z.coerce.number().int().min(0).max(120).optional(),
+  note: optionalText(500),
+});
+
+/**
+ * Rachunek „na to, co nierozliczone" — lekcje wybiera serwis, więc z wejścia
+ * potrzebny jest tylko uczeń i parametry dokumentu.
+ */
+export const outstandingInvoiceSchema = z.object({
+  studentId: trimmed.min(1, "Wybierz ucznia."),
   issuedAt: isoDate.optional(),
   dueDays: z.coerce.number().int().min(0).max(120).optional(),
   note: optionalText(500),
@@ -197,9 +260,7 @@ export const billingSettingsSchema = z.object({
 // ---------- FAZA 3: LIMIT NDG I STATYSTYKI ----------
 
 export const ndgSettingsSchema = z.object({
-  enabled: z.union([z.boolean(), z.literal("true"), z.literal("false")]).transform(
-    (v) => v === true || v === "true"
-  ),
+  enabled: flag,
   mode: z.enum(["MONTHLY", "QUARTERLY"]).default("QUARTERLY"),
   revenueBasis: z.enum(["INVOICED", "PAID"]).default("INVOICED"),
   warnThresholdPercent: z.coerce
@@ -207,14 +268,7 @@ export const ndgSettingsSchema = z.object({
     .int("Próg podaj w pełnych procentach.")
     .min(10, "Próg ostrzeżenia nie może być niższy niż 10%.")
     .max(100, "Próg ostrzeżenia nie może przekraczać 100%."),
-  businessStartedAt: z
-    .union([
-      trimmed.regex(/^\d{4}-\d{2}-\d{2}$/, "Podaj datę w formacie RRRR-MM-DD."),
-      z.literal(""),
-      z.null(),
-      z.undefined(),
-    ])
-    .transform((v) => (v === "" || v === undefined || v === null ? null : v)),
+  businessStartedAt: optionalDate(isoDate),
   note: optionalText(500),
 });
 
@@ -259,6 +313,12 @@ export const subjectLevelSchema = z.object({
   name: trimmed.min(1, "Podaj nazwę poziomu.").max(80),
 });
 
+/** Edycja poziomu: zmieniamy nazwę, widoczność albo obie naraz. */
+export const subjectLevelUpdateSchema = z.object({
+  name: trimmed.min(1, "Podaj nazwę poziomu.").max(80).optional(),
+  active: flag.optional(),
+});
+
 export const rateSchema = z.object({
   subjectLevelId: trimmed.min(1, "Wybierz przedmiot i poziom."),
   /**
@@ -286,14 +346,7 @@ export const speakingClubUseSchema = z.object({
 
 // ---------- ODWOŁANIA, SERIE, WYPŁATY, PRZYPOMNIENIA ----------
 
-const wallClockOptional = z
-  .union([
-    trimmed.regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/, "Podaj datę i godzinę."),
-    z.literal(""),
-    z.null(),
-    z.undefined(),
-  ])
-  .transform((v) => (v === "" || v === null || v === undefined ? null : v));
+const wallClockOptional = optionalDate(wallClock);
 
 export const cancelLessonSchema = z.object({
   /** Kiedy uczeń ZGŁOSIŁ odwołanie; puste = teraz. */
@@ -314,7 +367,7 @@ export const payoutSchema = z.object({
   }),
   paidAt: z
     .union([
-      trimmed.regex(/^\d{4}-\d{2}-\d{2}$/, "Podaj datę w formacie RRRR-MM-DD."),
+      isoDate,
       z.literal(""),
       z.null(),
       z.undefined(),
@@ -326,25 +379,31 @@ export const payoutSchema = z.object({
 export const availabilitySlotSchema = z
   .object({
     teacherId: optionalText(40),
-    date: trimmed.regex(/^\d{4}-\d{2}-\d{2}$/, "Podaj dzień w formacie RRRR-MM-DD."),
-    startTime: trimmed.regex(/^\d{2}:\d{2}$/, "Godzina w formacie 16:00."),
-    endTime: trimmed.regex(/^\d{2}:\d{2}$/, "Godzina w formacie 20:00."),
+    date: isoDate,
+    startTime: timeOfDay,
+    endTime: timeOfDay,
   })
   .refine((v) => v.startTime < v.endTime, {
     message: "Godzina zakończenia musi być późniejsza niż rozpoczęcia.",
     path: ["endTime"],
   });
 
+/** Wyczyszczenie dyspozycyjności z jednego dnia. */
+export const availabilityDaySchema = z.object({
+  teacherId: optionalText(40),
+  date: isoDate,
+});
+
 export const copyAvailabilitySchema = z.object({
   teacherId: optionalText(40),
   /** Tydzień źródłowy (poniedziałek) w formacie RRRR-MM-DD. */
-  sourceWeek: trimmed.regex(/^\d{4}-\d{2}-\d{2}$/, "Podaj tydzień źródłowy."),
-  targetWeek: trimmed.regex(/^\d{4}-\d{2}-\d{2}$/, "Podaj tydzień docelowy."),
+  sourceWeek: isoDate,
+  targetWeek: isoDate,
 });
 
 export const copyWeekToMonthSchema = z.object({
   teacherId: optionalText(40),
-  sourceWeek: trimmed.regex(/^\d{4}-\d{2}-\d{2}$/, "Podaj tydzień źródłowy."),
+  sourceWeek: isoDate,
   month: monthKeySchema,
 });
 

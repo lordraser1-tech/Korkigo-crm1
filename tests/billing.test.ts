@@ -9,6 +9,7 @@ import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { ForbiddenError, NotFoundError, ValidationError } from "@/lib/errors";
 import {
   cancelInvoice,
+  createInvoiceForOutstandingLessons,
   createLessonInvoice,
   getLessonPaymentStates,
   createMonthlyInvoice,
@@ -96,10 +97,40 @@ describeDb("rachunki i płatności", () => {
       );
     });
 
+    it("nauczyciel nie wystawi rachunku na zaległe lekcje", async () => {
+      await expect(
+        createInvoiceForOutstandingLessons(anna, { studentId })
+      ).rejects.toBeInstanceOf(ForbiddenError);
+    });
+
     it("nauczyciel nie zmieni trybu rozliczeń ucznia", async () => {
       await expect(
         updateStudent(anna, studentId, { billingMode: "PREPAID" })
       ).rejects.toBeInstanceOf(ForbiddenError);
+    });
+
+    it("zła data wystawienia nie tworzy rachunku", async () => {
+      await completedLesson("2026-09-07");
+      await expect(
+        createInvoiceForOutstandingLessons(admin, {
+          studentId,
+          issuedAt: "2026-13-45",
+        })
+      ).rejects.toThrow();
+      expect(await listInvoices(admin)).toHaveLength(0);
+    });
+
+    it("rachunek obejmuje dokładnie lekcje nierozliczone", async () => {
+      await completedLesson("2026-09-07");
+      await completedLesson("2026-09-14");
+
+      const invoice = await createInvoiceForOutstandingLessons(admin, {
+        studentId,
+        note: "",
+      });
+      expect(invoice.items).toHaveLength(2);
+      expect(invoice.note).toBeNull();
+      expect(await listUnbilledLessons(admin)).toHaveLength(0);
     });
 
     it("nauczyciel dostaje flagę tylko dla swoich uczniów", async () => {

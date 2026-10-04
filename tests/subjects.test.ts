@@ -17,6 +17,7 @@ import {
   listSubjects,
   resolveLessonRates,
   setTeacherRate,
+  updateSubjectLevel,
 } from "@/lib/services/subjects";
 import { createLessons, listLessons } from "@/lib/services/lessons";
 import { getTeacherEarnings } from "@/lib/services/finance";
@@ -260,6 +261,28 @@ describeDb("przedmioty i stawki", () => {
     expect(
       earnings.bySubject.find((row) => row.label === "Polski · Maturalny")?.amount
     ).toBe(80);
+  });
+
+  it("edycja poziomu odrzuca pustą nazwę zamiast ją zapisać", async () => {
+    const levelId = await createLevel("Angielski", "B2");
+    await expect(
+      updateSubjectLevel(admin, levelId, { name: "   " })
+    ).rejects.toThrow();
+
+    const [level] = await prisma.subjectLevel.findMany({ where: { id: levelId } });
+    expect(level.name).toBe("B2");
+  });
+
+  /**
+   * Przełącznik przychodzi z formularza jako tekst. `Boolean("false")` to
+   * `true`, więc bez własnego budulca poziom dałoby się tylko włączyć.
+   */
+  it('tekstowe "false" naprawdę wyłącza poziom', async () => {
+    const levelId = await createLevel("Angielski", "C1");
+    await updateSubjectLevel(admin, levelId, { active: "false" });
+
+    const [level] = await prisma.subjectLevel.findMany({ where: { id: levelId } });
+    expect(level.active).toBe(false);
   });
 
   it("przedmiot lekcji widać w listach", async () => {

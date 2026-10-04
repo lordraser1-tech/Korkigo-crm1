@@ -208,6 +208,35 @@ describeDb("dyspozycyjność nauczyciela", () => {
     ).rejects.toBeInstanceOf(ValidationError);
   });
 
+  /**
+   * Sedno: `2026-13-45` przechodziło przez samo wyrażenie regularne, a
+   * `Date.UTC(2026, 12, 45)` przewijało to na 2027-02-14. Czyszczenie dnia
+   * trafiało wtedy w inny dzień niż ten z formularza — po cichu, bo operacja
+   * kończyła się sukcesem.
+   */
+  it("nieistniejąca data nie kasuje przypadkowego dnia", async () => {
+    await createAvailability(anna, {
+      date: WEEK_1,
+      startTime: "16:00",
+      endTime: "20:00",
+    });
+
+    await expect(
+      clearAvailabilityDay(anna, { date: "2026-13-45" })
+    ).rejects.toThrow();
+    expect(await listAvailability(anna, null)).toHaveLength(1);
+  });
+
+  it("okno nie powstanie na godzinie spoza doby", async () => {
+    await expect(
+      createAvailability(anna, {
+        date: WEEK_1,
+        startTime: "99:99",
+        endTime: "99:99",
+      })
+    ).rejects.toThrow();
+  });
+
   it("zakres dat zawęża listę", async () => {
     await createAvailability(anna, {
       date: WEEK_1,

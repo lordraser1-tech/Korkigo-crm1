@@ -8,6 +8,7 @@ import { hashPassword, verifyPassword } from "@/lib/password";
 import {
   availabilitySlotSchema,
   changePasswordSchema,
+  availabilityDaySchema,
   copyAvailabilitySchema,
   copyWeekToMonthSchema,
   teacherCreateSchema,
@@ -359,10 +360,11 @@ export async function deleteAvailability(actor: Actor, id: string): Promise<void
 /** Usuwa całą dyspozycyjność wskazanego dnia. */
 export async function clearAvailabilityDay(
   actor: Actor,
-  input: { teacherId?: string | null; date: string }
+  input: z.input<typeof availabilityDaySchema>
 ): Promise<number> {
-  const teacherId = resolveTeacherId(actor, input.teacherId);
-  const date = wallClockToUtc(`${input.date}T00:00`);
+  const data = availabilityDaySchema.parse(input);
+  const teacherId = resolveTeacherId(actor, data.teacherId);
+  const date = wallClockToUtc(`${data.date}T00:00`);
   const result = await prisma.availabilitySlot.deleteMany({
     where: { teacherId, date },
   });

@@ -324,6 +324,18 @@ Testy: `tests/evidence.test.ts`.
 
 ## Bezpieczeństwo — reguły, których nie wolno cofnąć
 
+- **daty sprawdzamy kalendarzem, nie samym wyrażeniem regularnym**
+  (`isoDate`, `wallClock`, `timeOfDay`, `monthKeySchema` w `src/lib/validation.ts`).
+  `2026-13-45` przechodzi przez `^\d{4}-\d{2}-\d{2}$`, a `Date.UTC(2026, 12, 45)`
+  po cichu przewija to na 2027-02-14 — operacja wykonywała się wtedy na innym
+  dniu, niż podał użytkownik, i kończyła się sukcesem. Te cztery budulce są
+  **jedynym** miejscem z wyrażeniami regularnymi na daty; nie dopisuj własnego
+  obok. Pola „tak/nie" biorą `flag`, nie `z.coerce.boolean()` — `Boolean("false")`
+  to `true`, więc przełącznik z formularza działałby tylko w jedną stronę,
+- **każda funkcja serwisowa przyjmująca dane z zewnątrz parsuje je schematem**
+  (`z.input<typeof …>` + `.parse()`), nie ręcznym `if`-em. Bez tego użytkownik
+  dostaje „Coś poszło nie tak" zamiast komunikatu przy polu, bo `ZodError`
+  mapuje się na `fieldErrors`, a zwykły `Error` już nie,
 - **powrót po zalogowaniu przechodzi przez `safeNextPath()`** (`src/lib/safe-redirect.ts`).
   Samo `startsWith("/")` NIE wystarcza: `//evil.pl` i `/\evil.pl` przeglądarka
   traktuje jak adres bezwzględny, więc `?next=` wyprowadzał użytkownika
@@ -397,7 +409,7 @@ Testy: `tests/evidence.test.ts`.
 
 Testy: `tests/security.test.ts`, `tests/rate-limit.test.ts`,
 `tests/security-log.test.ts`, `tests/totp.test.ts`, `tests/two-factor.test.ts`,
-`tests/qr.test.ts`.
+`tests/qr.test.ts`, `tests/validation.test.ts`.
 
 ## RODO — eksport, anonimizacja, retencja
 
