@@ -8,6 +8,7 @@ import {
   startTwoFactorSetup,
 } from "@/lib/services/two-factor";
 import { toActionState, type ActionState } from "@/lib/action-result";
+import { createQrCode, type QrCode } from "@/lib/qr";
 import { revalidatePanels } from "./shared";
 
 /**
@@ -18,6 +19,11 @@ import { revalidatePanels } from "./shared";
 export type TwoFactorActionState = ActionState & {
   secretForDisplay?: string;
   uri?: string;
+  /**
+   * Kod QR liczymy tutaj, a nie w komponencie: w treści siedzi sekret TOTP,
+   * więc generator zostaje na serwerze i nie wchodzi do paczki klienta.
+   */
+  qr?: QrCode;
   recoveryCodes?: string[];
 };
 
@@ -29,7 +35,7 @@ export async function startTwoFactorAction(
     const actor = await requireActor();
     const setup = await startTwoFactorSetup(actor);
     revalidatePanels();
-    return { ok: true, ...setup };
+    return { ok: true, ...setup, qr: createQrCode(setup.uri) };
   } catch (error) {
     return toActionState(error);
   }

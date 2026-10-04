@@ -11,8 +11,32 @@ import {
 } from "@/app/actions/two-factor";
 import { FormMessage, SubmitButton } from "@/components/forms";
 import { Badge } from "@/components/ui";
+import type { QrCode } from "@/lib/qr";
 
 const IDLE_2FA: TwoFactorActionState = { ok: false };
+
+/**
+ * Kod QR przychodzi z serwera jako ścieżka SVG (`src/lib/qr.ts`) — tutaj
+ * zostaje tylko oprawić go w elementy React. Tło rysujemy jawnie białe:
+ * czytniki oczekują ciemnych modułów na jasnym tle, więc kod nie może
+ * przejmować kolorów motywu.
+ */
+function QrImage({ qr }: { qr: QrCode }) {
+  return (
+    <svg
+      viewBox={`0 0 ${qr.size} ${qr.size}`}
+      width={192}
+      height={192}
+      shapeRendering="crispEdges"
+      role="img"
+      aria-label="Kod QR z konfiguracją drugiego składnika"
+      className="rounded bg-white"
+    >
+      <rect width={qr.size} height={qr.size} fill="#ffffff" />
+      <path d={qr.path} fill="#0f172a" />
+    </svg>
+  );
+}
 
 /** Kody zapasowe i sekret pokazujemy raz — stąd wyraźne ostrzeżenie. */
 function RecoveryCodes({ codes }: { codes: string[] }) {
@@ -126,18 +150,29 @@ export function TwoFactorCard({ status }: { status: TwoFactorStatus }) {
       ) : setup ? (
         <div className="space-y-4">
           <div className="rounded-lg bg-slate-50 p-3">
-            <p className="mb-2 text-sm text-slate-700">
-              1. Dodaj konto w aplikacji — zeskanuj albo wklej ten adres:
+            <p className="mb-3 text-sm text-slate-700">
+              1. Dodaj konto w aplikacji — zeskanuj ten kod:
             </p>
-            <p className="mb-3 break-all rounded bg-white px-2 py-1 font-mono text-xs text-slate-600">
-              {startState.uri}
-            </p>
-            <p className="mb-2 text-sm text-slate-700">
-              Albo wpisz sekret ręcznie:
-            </p>
-            <p className="rounded bg-white px-2 py-1 text-center font-mono text-base tracking-widest text-slate-900">
-              {setup}
-            </p>
+            {startState.qr ? (
+              <div className="mb-3 flex justify-center">
+                <QrImage qr={startState.qr} />
+              </div>
+            ) : null}
+            <details className="text-sm text-slate-700">
+              <summary className="cursor-pointer select-none">
+                Nie mogę zeskanować — wpisz ręcznie
+              </summary>
+              <p className="mt-2 mb-1">Sekret do przepisania:</p>
+              <p className="rounded bg-white px-2 py-1 text-center font-mono text-base tracking-widest text-slate-900">
+                {setup}
+              </p>
+              <p className="mt-2 mb-1">
+                Albo wklej cały adres (aplikacje na komputerze to przyjmują):
+              </p>
+              <p className="break-all rounded bg-white px-2 py-1 font-mono text-xs text-slate-600">
+                {startState.uri}
+              </p>
+            </details>
           </div>
 
           <form action={confirmAction} className="space-y-2">

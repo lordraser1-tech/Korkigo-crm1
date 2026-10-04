@@ -25,6 +25,7 @@
     "bcryptjs": "^3.0.3",
     "jose": "^6.2.12",
     "next": "^15.5.25",
+    "qrcode-generator": "^2.0.4",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "zod": "^3.25.76"
@@ -36,6 +37,7 @@
     "@types/react-dom": "^19.3.0",
     "eslint": "^9.39.5",
     "eslint-config-next": "^15.5.25",
+    "jsqr": "^1.4.0",
     "prisma": "^6.19.3",
     "tailwindcss": "^4.3.3",
     "tsx": "^4.23.15",

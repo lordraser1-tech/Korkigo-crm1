@@ -379,7 +379,16 @@ Testy: `tests/evidence.test.ts`.
   - drugi składnik obowiązuje **także w REST** (pole `code` w `/api/auth/login`).
     Gdyby API go pomijało, byłoby najprostszym obejściem całej ochrony,
   - blokada po nieudanych próbach liczy się też na etapie kodu — inaczej byłby
-    wygodnym miejscem na zgadywanie sześciu cyfr bez ograniczeń.
+    wygodnym miejscem na zgadywanie sześciu cyfr bez ograniczeń,
+  - **kod QR rysujemy sami, na serwerze** (`src/lib/qr.ts`, `qrcode-generator`).
+    W treści siedzi sekret TOTP, więc nie wolno go wysłać do zewnętrznej usługi
+    generującej obrazki ani policzyć w przeglądarce. Funkcja zwraca ścieżkę
+    SVG, nie HTML — komponent składa z tego elementy React, bo projekt nie
+    używa `dangerouslySetInnerHTML`. Moduły są zawsze ciemne na białym tle:
+    odwrócony kontrast część czytników odrzuca. Test
+    (`tests/qr.test.ts`) **dekoduje** gotowy kod prawdziwym czytnikiem
+    (`jsqr`), bo zły maskowanie albo korekcja błędów daje kod, który skanuje
+    się raz na kilka prób — najgorszy możliwy rodzaj awarii.
 
 - **tryb `log` w SMS-ach jest na produkcji traktowany jako BRAK konfiguracji**
   i zwraca błąd. Wcześniej raportował sukces, więc przypomnienie zapisywało się
@@ -387,7 +396,8 @@ Testy: `tests/evidence.test.ts`.
   serwera widzi dostawca hostingu i nie są objęte naszą retencją.
 
 Testy: `tests/security.test.ts`, `tests/rate-limit.test.ts`,
-`tests/security-log.test.ts`, `tests/totp.test.ts`, `tests/two-factor.test.ts`.
+`tests/security-log.test.ts`, `tests/totp.test.ts`, `tests/two-factor.test.ts`,
+`tests/qr.test.ts`.
 
 ## RODO — eksport, anonimizacja, retencja
 
