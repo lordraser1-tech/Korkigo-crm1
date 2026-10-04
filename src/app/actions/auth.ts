@@ -4,7 +4,13 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { verifyPassword, hashPassword } from "@/lib/password";
-import { createSessionCookie, clearSessionCookie } from "@/lib/session";
+import {
+  clearPendingTwoFactorCookie,
+  clearSessionCookie,
+  createPendingTwoFactorCookie,
+  createSessionCookie,
+  readPendingTwoFactor,
+} from "@/lib/session";
 import { loginSchema } from "@/lib/validation";
 import { homePathFor } from "@/lib/auth";
 import { safeNextPath } from "@/lib/safe-redirect";
@@ -16,6 +22,10 @@ import {
   registerSuccessfulLogin,
 } from "@/lib/services/login-guard";
 import { recordSecurityEvent } from "@/lib/services/security-log";
+import {
+  requiresSecondFactor,
+  verifySecondFactor,
+} from "@/lib/services/two-factor";
 import { type ActionState, toActionState } from "@/lib/action-result";
 
 // Stały hash porównawczy — nieistniejący e-mail kosztuje tyle samo czasu co zły
@@ -91,6 +101,16 @@ export async function loginAction(
     }
 
     await registerSuccessfulLogin(user.id);
+
+    // Hasło się zgadza, ale przy włączonym drugim składniku to jeszcze nie
+    // sesja — wydajemy krótkie ciasteczko etapu pośredniego i prosimy o kod.
+    if (await requiresSecondFactor(user.id)) {
+      await createPendingTwoFactorCookie(user.id);
+      // `next` zostaje w formularzu po stronie klienta — nie ma potrzeby
+      // przesyłać go tu i z powrotem.
+      return { ok: true, step: "TWO_FACTOR" };
+    }
+
     await recordSecurityEvent({
       type: "LOGIN_OK",
       userId: user.id,
@@ -108,5 +128,90 @@ export async function loginAction(
 
 export async function logoutAction(): Promise<void> {
   await clearSessionCookie();
+  await clearPendingTwoFactorCookie();
   redirect("/login");
+}
+
+/**
+ * Drugi etap logowania: kod z aplikacji albo kod zapasowy.
+ *
+ * Tożsamość bierzemy z ciasteczka etapu pośredniego, nie z formularza — inaczej
+ * dałoby się podać cudzy identyfikator i zalogować bez znajomości hasła.
+ */
+export async function verifyTwoFactorAction(
+  _prev: ActionState,
+  formData: FormData
+): Promise<ActionState> {
+  let target: string;
+  const requestHeaders = await headers();
+  const ip = clientKey(requestHeaders);
+  const userAgent = requestHeaders.get("user-agent");
+
+  try {
+    const userId = await readPendingTwoFactor();
+    if (!userId) {
+      return {
+        ok: false,
+        message: "Sesja weryfikacji wygasła. Zaloguj się ponownie.",
+      };
+    }
+
+    const code = formData.get("code");
+    if (typeof code !== "string" || code.trim().length === 0) {
+      return { ok: false, message: "Podaj kod." };
+    }
+
+    // Blokada liczy się także tutaj — inaczej drugi składnik byłby wygodnym
+    // miejscem na zgadywanie szcześciocyfrowego kodu bez ograniczeń.
+    if ((await checkLock(userId)).locked) {
+      return {
+        ok: false,
+        message: `Zbyt wiele nieudanych prób. Spróbuj ponownie za ${LOCK_MINUTES} minut.`,
+      };
+    }
+
+    const result = await verifySecondFactor(userId, code);
+    if (!result.ok) {
+      await registerFailedLogin(userId);
+      await recordSecurityEvent({
+        type: "TOTP_FAILED",
+        userId,
+        ip,
+        userAgent,
+      });
+      return { ok: false, message: "Kod się nie zgadza." };
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, email: true, role: true },
+    });
+    if (!user) return { ok: false, message: "Nie znaleziono konta." };
+
+    await registerSuccessfulLogin(user.id);
+    if (result.usedRecoveryCode) {
+      await recordSecurityEvent({
+        type: "RECOVERY_CODE_USED",
+        userId: user.id,
+        email: user.email,
+        ip,
+        userAgent,
+      });
+    }
+    await recordSecurityEvent({
+      type: "LOGIN_OK",
+      userId: user.id,
+      email: user.email,
+      ip,
+      userAgent,
+      detail: result.usedRecoveryCode ? "kod zapasowy" : "drugi składnik",
+    });
+
+    await clearPendingTwoFactorCookie();
+    await createSessionCookie({ userId: user.id, role: user.role });
+    target = safeNextPath(formData.get("next")) ?? homePathFor(user.role);
+  } catch (error) {
+    return toActionState(error);
+  }
+  redirect(target);
 }

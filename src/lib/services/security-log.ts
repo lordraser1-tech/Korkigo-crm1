@@ -72,6 +72,10 @@ const FAILURE_TYPES: SecurityEventType[] = [
   "LOGIN_FAILED",
   "LOGIN_BLOCKED",
   "ACCOUNT_LOCKED",
+  // Zły kod drugiego składnika i użycie kodu zapasowego też chcemy widzieć
+  // w jednym rzucie oka — oba mogą znaczyć, że ktoś ma już hasło.
+  "TOTP_FAILED",
+  "RECOVERY_CODE_USED",
 ];
 
 export async function listSecurityEvents(

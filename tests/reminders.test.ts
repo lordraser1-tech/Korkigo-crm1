@@ -15,6 +15,7 @@ import {
   runReminderBatch,
 } from "@/lib/services/reminders";
 import { buildReminderMessage } from "@/lib/reminders/template";
+import { currentMonthKey } from "@/lib/datetime";
 import {
   createAdmin,
   createLesson,
@@ -101,6 +102,56 @@ describeDb("przypomnienia o lekcji", () => {
 
     // Drugie przejście nie bierze tej lekcji pod uwagę.
     expect((await runReminderBatch(NOW)).considered).toBe(0);
+  });
+
+  it("na produkcji tryb log NIE udaje wysyłki", async () => {
+    // To był realny błąd: SMS_PROVIDER=log jest wartością DOMYŚLNĄ, więc
+    // wdrożenie bez konfiguracji zapisywało przypomnienia jako wysłane,
+    // choć nikt ich nie dostał.
+    const lessonId = await scheduleLesson();
+    await setChannel("SMS", { contactPhone: "+48600100200" });
+    const previous = process.env.NODE_ENV;
+    // `NODE_ENV` jest w typach tylko do odczytu, ale w runtime to zwykłe pole.
+    Object.defineProperty(process.env, "NODE_ENV", {
+      value: "production",
+      configurable: true,
+      writable: true,
+      enumerable: true,
+    });
+
+    try {
+      const result = await runReminderBatch(NOW);
+      expect(result.sent).toBe(0);
+      expect(result.failed).toBe(1);
+      expect(result.details[0].error).toContain("nieskonfigurowany");
+
+      const entry = await prisma.reminderLog.findUnique({ where: { lessonId } });
+      expect(entry?.status).toBe("FAILED");
+    } finally {
+      Object.defineProperty(process.env, "NODE_ENV", {
+        value: previous,
+        configurable: true,
+        writable: true,
+        enumerable: true,
+      });
+    }
+  });
+
+  it("poza produkcją tryb log maskuje numer w logu", async () => {
+    await scheduleLesson();
+    await setChannel("SMS", { contactPhone: "+48600100200" });
+    const lines: string[] = [];
+    const log = vi.spyOn(console, "info").mockImplementation((...args) => {
+      lines.push(args.join(" "));
+    });
+
+    await runReminderBatch(NOW);
+    log.mockRestore();
+
+    expect(lines).toHaveLength(1);
+    // Logi serwera widzi dostawca hostingu — pełny numer tam nie trafia.
+    expect(lines[0]).not.toContain("+48600100200");
+    expect(lines[0]).toContain("0200");
   });
 
   it("SMS bez numeru telefonu kończy się błędem, nie wyjątkiem", async () => {
@@ -216,14 +267,17 @@ describeDb("przypomnienia o lekcji", () => {
     log.mockRestore();
     expect(lessonId).toBeTruthy();
 
-    const usage = await getReminderUsage(admin, "2026-09");
+    // `ReminderLog.sentAt` to prawdziwe „teraz", nie `NOW` z testu, więc
+    // licznik pytamy o bieżący miesiąc. Zahardkodowany miesiąc psuł ten test
+    // sam z siebie po zmianie kalendarza.
+    const usage = await getReminderUsage(admin, currentMonthKey());
     expect(usage.sms).toBe(1);
     expect(usage.telegram).toBe(0);
     expect(usage.failed).toBe(0);
 
-    await expect(getReminderUsage(anna, "2026-09")).rejects.toBeInstanceOf(
-      ForbiddenError
-    );
+    await expect(
+      getReminderUsage(anna, currentMonthKey())
+    ).rejects.toBeInstanceOf(ForbiddenError);
   });
 });
 

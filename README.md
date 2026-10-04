@@ -514,6 +514,14 @@ Stan po przeglądzie przed wdrożeniem:
   blokady kont, zmiany haseł, adresy z największą liczbą prób. Wpisy starsze
   niż 90 dni kasują się same.
 
+- **logowanie dwuetapowe (TOTP)** dla każdego konta, do włączenia w Ustawieniach:
+  kod z aplikacji (Google Authenticator, Aegis, 1Password) plus 8 jednorazowych
+  kodów zapasowych. Obowiązuje też w REST (`code` w `/api/auth/login`),
+- **obsługa żądań RODO**: eksport danych ucznia do pliku JSON i anonimizacja,
+  która nadpisuje dane osobowe — także snapshot nabywcy na rachunkach — ale
+  zachowuje dokumenty księgowe. Przegląd retencji podpowiada, przy kim warto
+  to rozważyć, i nic nie kasuje sam.
+
 Czego **nie** ma i warto o tym wiedzieć przed wystawieniem na świat:
 
 - licznik limitu żyje w pamięci procesu — zeruje się przy restarcie i nie jest
@@ -521,7 +529,9 @@ Czego **nie** ma i warto o tym wiedzieć przed wystawieniem na świat:
   albo za CDN-em dołóż limit po stronie hostingu,
 - `script-src` w CSP ma `'unsafe-inline'`, bo Next wstrzykuje inline'owe skrypty
   hydracji bez nonce'a; CSP nadal odcina skrypty z obcych domen,
-- nie ma dwuskładnikowego logowania ani dziennika logowań,
+- konfiguracja drugiego składnika pokazuje sekret do przepisania i adres
+  `otpauth://`, ale **nie rysuje kodu QR** — to byłaby kolejna zależność.
+  Aplikacje uwierzytelniające przyjmują wklejony adres,
 - `npm audit` zgłasza podatności `postcss` ciągnięte przez Next. Dotyczą
   przetwarzania CSS w czasie builda, a nie danych od użytkowników — aktualizuj
   Next w ramach wersji 15.x, gdy wyjdzie poprawka.

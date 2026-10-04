@@ -363,8 +363,52 @@ Testy: `tests/evidence.test.ts`.
 - reset hasła przez admina **zdejmuje blokadę konta** — inaczej nauczyciel
   dalej nie mógłby wejść nowym hasłem.
 
+- **drugi składnik (TOTP)** — `src/lib/totp.ts` (implementacja własna, zgodna
+  z RFC 6238) + `src/lib/services/two-factor.ts`. Niezmienniki:
+  - sekret TOTP leży w bazie **zaszyfrowany**; wyciek bazy nie daje generatora kodów,
+  - konfiguracja jest **dwuetapowa**: sekret powstaje przy „Rozpocznij", ale
+    drugi składnik włącza się dopiero po przepisaniu poprawnego kodu — inaczej
+    dałoby się zamknąć sobie dostęp sekretem, którego aplikacja nie dostała,
+  - **kody zapasowe są obowiązkowe** (8 sztuk, jednorazowe), bo bez nich utrata
+    telefonu zamyka właścicielowi dostęp do własnego CRM-a na zawsze,
+  - kody haszujemy **SHA-256, nie bcryptem**: mają 50 bitów entropii
+    z generatora, a bcrypt kosztem 12 przy ośmiu kodach to ~2,5 s CPU na jedną
+    próbę logowania — wolno dla użytkownika i tani sposób na obciążenie serwera,
+  - wyłączenie i nowe kody **wymagają hasła** — inaczej ktoś z przejętą sesją
+    zdjąłby drugi składnik jednym kliknięciem,
+  - drugi składnik obowiązuje **także w REST** (pole `code` w `/api/auth/login`).
+    Gdyby API go pomijało, byłoby najprostszym obejściem całej ochrony,
+  - blokada po nieudanych próbach liczy się też na etapie kodu — inaczej byłby
+    wygodnym miejscem na zgadywanie sześciu cyfr bez ograniczeń.
+
+- **tryb `log` w SMS-ach jest na produkcji traktowany jako BRAK konfiguracji**
+  i zwraca błąd. Wcześniej raportował sukces, więc przypomnienie zapisywało się
+  jako wysłane, choć nikt go nie dostał. Numer w logu jest maskowany — logi
+  serwera widzi dostawca hostingu i nie są objęte naszą retencją.
+
 Testy: `tests/security.test.ts`, `tests/rate-limit.test.ts`,
-`tests/security-log.test.ts`.
+`tests/security-log.test.ts`, `tests/totp.test.ts`, `tests/two-factor.test.ts`.
+
+## RODO — eksport, anonimizacja, retencja
+
+`src/lib/services/privacy.ts`. Tylko ADMIN. To narzędzie pomocnicze —
+o tym, czy wolno usunąć dane i jaki okres przechowywania obowiązuje, decyduje
+administrator danych, nie aplikacja.
+
+- **eksport** (`GET /api/students/[id]/eksport?pobierz=1`) wydaje komplet danych
+  ucznia i opiekuna wraz z lekcjami, rachunkami i wpłatami. **Nie zawiera
+  stawek nauczyciela ani marży** — to dane firmy, nie osoby, której dotyczy
+  żądanie,
+- **anonimizacja** nadpisuje dane osobowe, ale **nie usuwa dokumentów**:
+  rachunek ma własny okres przechowywania, więc zostaje z pustą tożsamością,
+- nadpisujemy **także `Invoice.buyerSnapshot`** — to osobna kopia imienia,
+  e-maila i telefonu. Anonimizacja, która go pomija, jest pozorna,
+- wymaga **powodu**, jest nieodwracalna i trafia do dziennika,
+- **przegląd retencji** (`/admin/bezpieczenstwo`) wypisuje uczniów zakończonych
+  i nieaktywnych od `RETENTION_REVIEW_MONTHS` (36) miesięcy. Aplikacja
+  **świadomie nie kasuje nic sama** — okres zależy od podstawy prawnej.
+
+Testy: `tests/privacy.test.ts`.
 
 ## Moduł NDG (faza 3) — reguły
 

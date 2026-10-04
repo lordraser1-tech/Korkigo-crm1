@@ -21,6 +21,8 @@ export const amountSchema = z
 export const loginSchema = z.object({
   email: trimmed.toLowerCase().email("Podaj poprawny adres e-mail."),
   password: z.string().min(1, "Podaj hasło."),
+  /** Drugi składnik dla klientów API, które nie mają ciasteczek. */
+  code: z.string().max(40).optional(),
 });
 
 export const studentStatusSchema = z.enum(["ACTIVE", "PAUSED", "ENDED"]);

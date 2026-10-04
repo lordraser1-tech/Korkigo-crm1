@@ -6,7 +6,11 @@ import {
   getSecuritySummary,
   listSecurityEvents,
 } from "@/lib/services/security-log";
-import { formatDateTime } from "@/lib/datetime";
+import {
+  RETENTION_REVIEW_MONTHS,
+  listRetentionCandidates,
+} from "@/lib/services/privacy";
+import { formatDate, formatDateTime } from "@/lib/datetime";
 import { Badge, EmptyState, PageHeader, StatCard } from "@/components/ui";
 
 const LABEL: Record<SecurityEventType, string> = {
@@ -17,6 +21,12 @@ const LABEL: Record<SecurityEventType, string> = {
   PASSWORD_CHANGED: "Zmiana hasła",
   PASSWORD_RESET: "Reset hasła przez admina",
   TEACHER_DEACTIVATED: "Konto nauczyciela wyłączone",
+  TOTP_ENABLED: "Włączono drugi składnik",
+  TOTP_DISABLED: "Wyłączono drugi składnik",
+  TOTP_FAILED: "Zły kod drugiego składnika",
+  RECOVERY_CODE_USED: "Użyto kodu zapasowego",
+  STUDENT_ANONYMIZED: "Anonimizacja danych ucznia",
+  STUDENT_EXPORTED: "Eksport danych ucznia",
 };
 
 const TONE: Record<SecurityEventType, "green" | "amber" | "red" | "slate"> = {
@@ -27,6 +37,12 @@ const TONE: Record<SecurityEventType, "green" | "amber" | "red" | "slate"> = {
   PASSWORD_CHANGED: "slate",
   PASSWORD_RESET: "slate",
   TEACHER_DEACTIVATED: "slate",
+  TOTP_ENABLED: "green",
+  TOTP_DISABLED: "amber",
+  TOTP_FAILED: "amber",
+  RECOVERY_CODE_USED: "amber",
+  STUDENT_ANONYMIZED: "slate",
+  STUDENT_EXPORTED: "slate",
 };
 
 const FILTERS = [
@@ -50,9 +66,10 @@ export default async function AdminSecurityPage({
       ? (filtr as SecurityEventType)
       : null;
 
-  const [summary, events] = await Promise.all([
+  const [summary, events, retention] = await Promise.all([
     getSecuritySummary(actor),
     listSecurityEvents(actor, { type, onlyFailures, limit: 200 }),
+    listRetentionCandidates(actor),
   ]);
 
   const alarm = summary.failedLast24h >= 20 || summary.lockedLast24h > 0;
@@ -136,6 +153,59 @@ export default async function AdminSecurityPage({
           </ul>
         </section>
       ) : null}
+
+      <section className="mt-8">
+        <h2 className="mb-1 text-base font-semibold text-slate-900">
+          Przegląd retencji danych
+        </h2>
+        <p className="mb-3 text-sm text-slate-500">
+          Uczniowie ze statusem „Zakończony”, bez lekcji od co najmniej{" "}
+          {RETENTION_REVIEW_MONTHS} miesięcy. Aplikacja{" "}
+          <strong>nic nie kasuje sama</strong> — okres przechowywania zależy od
+          podstawy prawnej i dokumentów księgowych, więc decyzję podejmujesz Ty.
+        </p>
+        {retention.length === 0 ? (
+          <EmptyState>
+            Nie ma uczniów kwalifikujących się do przeglądu.
+          </EmptyState>
+        ) : (
+          <div className="card overflow-x-auto">
+            <table className="w-full min-w-[560px] text-sm">
+              <thead className="table-head">
+                <tr>
+                  <th className="px-4 py-2.5 text-left">Uczeń</th>
+                  <th className="px-4 py-2.5 text-left">Ostatnia lekcja</th>
+                  <th className="px-4 py-2.5 text-left">Od ilu miesięcy</th>
+                  <th className="px-4 py-2.5 text-left">Rachunki</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {retention.map((row) => (
+                  <tr key={row.studentId} className="hover:bg-slate-50">
+                    <td className="px-4 py-2">
+                      <Link
+                        href={`/admin/uczniowie/${row.studentId}`}
+                        className="font-medium text-brand-700 hover:underline"
+                      >
+                        {row.studentName}
+                      </Link>
+                    </td>
+                    <td className="px-4 py-2 text-slate-600">
+                      {row.lastLessonAt
+                        ? formatDate(new Date(row.lastLessonAt))
+                        : "brak lekcji"}
+                    </td>
+                    <td className="px-4 py-2 text-slate-600">
+                      {row.monthsSinceLastLesson ?? "—"}
+                    </td>
+                    <td className="px-4 py-2 text-slate-600">{row.invoices}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
 
       <section className="mt-8">
         <div className="mb-3 flex flex-wrap gap-1 rounded-lg border border-slate-200 bg-white p-1">

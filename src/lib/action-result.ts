@@ -5,6 +5,11 @@ export type ActionState = {
   ok: boolean;
   message?: string;
   fieldErrors?: Record<string, string[]>;
+  /**
+   * Akcja skończyła się poprawnie, ale wymaga kolejnego kroku od użytkownika.
+   * Dziś jedyny przypadek to drugi składnik logowania.
+   */
+  step?: "TWO_FACTOR";
 };
 
 export const IDLE: ActionState = { ok: false };

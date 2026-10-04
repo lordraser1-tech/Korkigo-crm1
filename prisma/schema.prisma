@@ -30,6 +30,12 @@ model User {
   /// Ochrona przed zgadywaniem hasła. Licznik zeruje się po udanym logowaniu,
   /// a blokada jest KRÓTKA i tylko czasowa — trwałe zamknięcie konta dałoby
   /// się wykorzystać do odcięcia nauczyciela od pracy cudzymi próbami.
+
+  /// Sekret TOTP (drugi składnik). Trzymany ZASZYFROWANY — wyciek bazy nie
+  /// może dać komuś generatora kodów. `null` = drugi składnik wyłączony.
+  totpSecret        String?
+  /// Od kiedy drugi składnik jest wymagany przy logowaniu.
+  totpEnabledAt     DateTime?
   failedLogins      Int       @default(0)
   lockedUntil       DateTime?
   sessionsValidFrom DateTime  @default(now())
@@ -41,6 +47,7 @@ model User {
   speakingClubs  SpeakingClubUse[]
   payouts        Payout[]
   securityEvents SecurityEvent[]
+  recoveryCodes  TwoFactorRecoveryCode[]
 
   @@map("users")
 }
@@ -133,8 +140,12 @@ model Student {
   teacherId String?
   teacher   TeacherProfile? @relation(fields: [teacherId], references: [id])
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  /// Kiedy dane osobowe ucznia zostały nadpisane na żądanie (RODO art. 17).
+  /// Rekordy finansowe zostają — mają własny okres przechowywania — ale nie
+  /// wskazują już na konkretną osobę.
+  anonymizedAt DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
   lessons        Lesson[]
   notes          LessonNote[]
@@ -659,6 +670,24 @@ model ReminderLog {
   @@map("reminder_logs")
 }
 
+/// Jednorazowy kod zapasowy do drugiego składnika.
+///
+/// Bez tego utrata telefonu zamyka właścicielowi dostęp do własnego CRM-a na
+/// zawsze. Kody trzymamy jako HASZE — w bazie nie ma z czego ich odtworzyć.
+model TwoFactorRecoveryCode {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  codeHash String
+  usedAt   DateTime?
+
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@map("two_factor_recovery_codes")
+}
+
 // ---------- DZIENNIK ZDARZEŃ BEZPIECZEŃSTWA ----------
 
 enum SecurityEventType {
@@ -669,6 +698,12 @@ enum SecurityEventType {
   PASSWORD_CHANGED // właściciel zmienił swoje hasło
   PASSWORD_RESET // admin ustawił hasło nauczycielowi
   TEACHER_DEACTIVATED
+  TOTP_ENABLED
+  TOTP_DISABLED
+  TOTP_FAILED // zły kod drugiego składnika
+  RECOVERY_CODE_USED
+  STUDENT_ANONYMIZED
+  STUDENT_EXPORTED
 }
 
 /// Ślad po zdarzeniach logowania i zmianach haseł.

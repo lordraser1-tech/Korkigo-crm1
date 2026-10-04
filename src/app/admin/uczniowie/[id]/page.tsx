@@ -7,6 +7,7 @@ import { listLessons } from "@/lib/services/lessons";
 import { getStudentBilling, getLessonPaymentStates } from "@/lib/services/billing";
 import { getStudentRates, listSubjectLevels } from "@/lib/services/subjects";
 import { getSpeakingClub } from "@/lib/services/speaking-club";
+import { previewAnonymization } from "@/lib/services/privacy";
 import { RateEditor } from "@/components/rate-editor";
 import { SpeakingClubCard } from "@/components/speaking-club-card";
 import { NotFoundError } from "@/lib/errors";
@@ -16,6 +17,7 @@ import { LessonHistory, parseHistoryFilter } from "@/components/lesson-history";
 import { StudentBillingCard } from "@/components/student-billing-card";
 import { StudentContactFields } from "@/components/student-contact-fields";
 import { StudentReminderCard } from "@/components/student-reminder-card";
+import { StudentPrivacyCard } from "@/components/student-privacy-card";
 import { StudentSubjects } from "@/components/student-subjects";
 import { BILLING_MODE_OPTIONS } from "@/components/billing";
 import { PageHeader, StudentStatusBadge } from "@/components/ui";
@@ -35,7 +37,7 @@ export default async function AdminStudentPage({
     if (error instanceof NotFoundError) notFound();
     throw error;
   });
-  const [teachers, lessons, billing, rates, speakingClub, levels] =
+  const [teachers, lessons, billing, rates, speakingClub, levels, privacy] =
     await Promise.all([
       listTeachers(actor, { includeInactive: true }),
       listLessons(actor, { studentId: student.id }),
@@ -43,6 +45,7 @@ export default async function AdminStudentPage({
       getStudentRates(actor, student.id),
       getSpeakingClub(actor, student.id),
       listSubjectLevels(actor),
+      previewAnonymization(actor, student.id),
     ]);
   const payments = await getLessonPaymentStates(
     actor,
@@ -132,6 +135,8 @@ export default async function AdminStudentPage({
           </div>
 
           <SpeakingClubCard studentId={student.id} club={speakingClub} canUndo />
+
+          <StudentPrivacyCard studentId={student.id} preview={privacy} />
 
           <div className="card p-5">
             <h2 className="mb-2 text-base font-semibold text-slate-900">

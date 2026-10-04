@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { requirePage } from "@/lib/auth";
+import { getTwoFactorStatus } from "@/lib/services/two-factor";
 import { getMyTeacherProfile } from "@/lib/services/teachers";
 import { getTeacherRates } from "@/lib/services/subjects";
 import {
@@ -13,6 +14,7 @@ import {
 import { ActionForm, Field } from "@/components/forms";
 import { GoogleCalendarCard } from "@/components/google-calendar-card";
 import { formatPLN } from "@/lib/money";
+import { TwoFactorCard } from "@/components/two-factor-card";
 import { PageHeader } from "@/components/ui";
 
 export default async function TeacherSettingsPage({
@@ -22,10 +24,11 @@ export default async function TeacherSettingsPage({
 }) {
   const actor = await requirePage("TEACHER");
   const { kalendarz } = await searchParams;
-  const [profile, rates, calendar] = await Promise.all([
+  const [profile, rates, calendar, twoFactor] = await Promise.all([
     getMyTeacherProfile(actor),
     getTeacherRates(actor, actor.teacherProfileId),
     getCalendarLink(actor),
+    getTwoFactorStatus(actor),
   ]);
 
   return (
@@ -54,6 +57,8 @@ export default async function TeacherSettingsPage({
       ) : null}
 
       <div className="grid gap-6 lg:grid-cols-2">
+        <TwoFactorCard status={twoFactor} />
+
         <GoogleCalendarCard
           link={calendar}
           configured={isCalendarConfigured()}

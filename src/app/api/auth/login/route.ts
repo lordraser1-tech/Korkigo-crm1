@@ -11,6 +11,10 @@ import {
 } from "@/lib/services/login-guard";
 import { recordSecurityEvent } from "@/lib/services/security-log";
 import { createSessionCookie } from "@/lib/session";
+import {
+  requiresSecondFactor,
+  verifySecondFactor,
+} from "@/lib/services/two-factor";
 import { loginSchema } from "@/lib/validation";
 
 // Ten sam zabieg co w akcji formularza: nieistniejący e-mail kosztuje tyle
@@ -74,6 +78,51 @@ export async function POST(request: Request) {
     if (user.role === "TEACHER" && !user.teacherProfile?.active) {
       throw new UnauthorizedError("Konto jest nieaktywne.");
     }
+    // Drugi składnik obowiązuje TAKŻE tutaj. Gdyby REST go pomijał, byłby
+    // najprostszym obejściem całej ochrony — wystarczyłoby znać hasło.
+    // Klient API podaje kod w tym samym żądaniu (pole `code`); etapu
+    // pośredniego na ciasteczku nie ma, bo integracja nie ma przeglądarki.
+    if (await requiresSecondFactor(user.id)) {
+      const code = typeof data.code === "string" ? data.code : "";
+      if (!code) {
+        await recordSecurityEvent({
+          type: "TOTP_FAILED",
+          userId: user.id,
+          email: user.email,
+          ip,
+          userAgent,
+          detail: "API bez kodu",
+        });
+        throw new UnauthorizedError(
+          "Konto wymaga drugiego składnika — podaj pole `code`."
+        );
+      }
+
+      const second = await verifySecondFactor(user.id, code);
+      if (!second.ok) {
+        await registerFailedLogin(user.id);
+        await recordSecurityEvent({
+          type: "TOTP_FAILED",
+          userId: user.id,
+          email: user.email,
+          ip,
+          userAgent,
+          detail: "API",
+        });
+        throw new UnauthorizedError("Kod się nie zgadza.");
+      }
+      if (second.usedRecoveryCode) {
+        await recordSecurityEvent({
+          type: "RECOVERY_CODE_USED",
+          userId: user.id,
+          email: user.email,
+          ip,
+          userAgent,
+          detail: "API",
+        });
+      }
+    }
+
     await registerSuccessfulLogin(user.id);
     await recordSecurityEvent({
       type: "LOGIN_OK",

@@ -9,6 +9,24 @@ import type { AdminActor, TeacherActor } from "@/lib/auth";
 
 export const prisma = new PrismaClient();
 
+/**
+ * Konta testowe dostają atrapę hasła (`"x"`), bo prawdziwy bcrypt kosztem 12
+ * przy każdym tworzeniu konta zjadałby sekundy w całym zestawie. Testy, które
+ * naprawdę weryfikują hasło, wołają `givePassword()`.
+ */
+export const TEST_PASSWORD = "testoweHaslo123";
+
+export async function givePassword(
+  userId: string,
+  plain = TEST_PASSWORD
+): Promise<void> {
+  const { hashPassword } = await import("@/lib/password");
+  await prisma.user.update({
+    where: { id: userId },
+    data: { passwordHash: await hashPassword(plain) },
+  });
+}
+
 /** Bez bazy testy integracyjne są pomijane zamiast wysypywać cały przebieg. */
 export const describeDb = process.env.DATABASE_URL ? describe : describe.skip;
 
@@ -31,7 +49,7 @@ export async function resetDatabase(): Promise<void> {
      "ndg_monthly_limits", "ndg_settings",
      "payments", "invoice_items", "invoices", "billing_settings",
      "speaking_club_uses", "lesson_notes", "knowledge_base_entries",
-     "reminder_logs", "security_events",
+     "reminder_logs", "security_events", "two_factor_recovery_codes",
      "google_calendar_deletions", "google_calendar_links",
      "lessons", "payouts", "telegram_link_tokens",
      "student_rates", "teacher_rates", "subject_levels", "subjects",

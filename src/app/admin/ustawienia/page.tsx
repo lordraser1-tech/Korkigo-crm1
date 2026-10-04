@@ -1,18 +1,21 @@
 import { requirePage } from "@/lib/auth";
+import { getTwoFactorStatus } from "@/lib/services/two-factor";
 import { getBillingSettings } from "@/lib/services/billing";
 import { getReminderUsage } from "@/lib/services/reminders";
 import { currentMonthKey, formatMonthLabel } from "@/lib/datetime";
 import { updateBillingSettingsAction } from "@/app/actions/billing";
 import { changeOwnPasswordAction } from "@/app/actions/teachers";
 import { ActionForm, Field } from "@/components/forms";
+import { TwoFactorCard } from "@/components/two-factor-card";
 import { PageHeader } from "@/components/ui";
 
 export default async function AdminSettingsPage() {
   const actor = await requirePage("ADMIN");
   const monthKey = currentMonthKey();
-  const [settings, reminders] = await Promise.all([
+  const [settings, reminders, twoFactor] = await Promise.all([
     getBillingSettings(actor),
     getReminderUsage(actor, monthKey),
+    getTwoFactorStatus(actor),
   ]);
 
   return (
@@ -23,6 +26,8 @@ export default async function AdminSettingsPage() {
       />
 
       <div className="grid gap-6 lg:grid-cols-2">
+        <TwoFactorCard status={twoFactor} />
+
         <div className="card p-5">
           <h2 className="mb-4 text-base font-semibold text-slate-900">
             Dane do rachunków

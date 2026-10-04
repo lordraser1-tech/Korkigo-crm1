@@ -8,6 +8,16 @@
 
 export type SendResult = { ok: true } | { ok: false; error: string };
 
+/**
+ * Numer w logu maskujemy — logi serwera widzi dostawca hostingu i nie są objęte
+ * naszą retencją, więc nie ma powodu zostawiać tam pełnych numerów uczniów.
+ */
+function maskPhone(phone: string): string {
+  const digits = phone.replace(/\D/g, "");
+  if (digits.length <= 4) return "•".repeat(digits.length);
+  return `${phone.slice(0, phone.length - 4).replace(/\d/g, "•")}${phone.slice(-4)}`;
+}
+
 export type ReminderTarget = {
   telegramChatId: string | null;
   phone: string | null;
@@ -48,9 +58,13 @@ async function sendTelegram(
 }
 
 /**
- * SMS przez dostawcę wskazanego w `SMS_PROVIDER`. Domyślnie „log” — zapisuje
- * treść do logów zamiast wysyłać, żeby dało się przetestować cały przepływ
- * bez płatnego konta.
+ * SMS przez dostawcę wskazanego w `SMS_PROVIDER`.
+ *
+ * Tryb „log” istnieje do testów: wypisuje treść zamiast wysyłać. Na PRODUKCJI
+ * jest jednak traktowany jako BRAK KONFIGURACJI i zwraca błąd — wcześniej
+ * raportował sukces, więc przypomnienie zapisywało się jako wysłane, choć nikt
+ * go nie dostał. Lepiej zobaczyć w dzienniku „nieskonfigurowane” niż wierzyć,
+ * że uczeń został powiadomiony.
  */
 async function sendSms(
   target: ReminderTarget,
@@ -60,7 +74,14 @@ async function sendSms(
 
   const provider = process.env.SMS_PROVIDER ?? "log";
   if (provider === "log") {
-    console.info(`[SMS → ${target.phone}] ${message}`);
+    if (process.env.NODE_ENV === "production") {
+      return {
+        ok: false,
+        error:
+          "SMS nieskonfigurowany (SMS_PROVIDER=log na produkcji) — nic nie wysłano.",
+      };
+    }
+    console.info(`[SMS → ${maskPhone(target.phone)}] ${message}`);
     return { ok: true };
   }
 
