@@ -3,30 +3,16 @@ import type { NextConfig } from "next";
 /**
  * Nagłówki bezpieczeństwa.
  *
- * Najważniejszy jest `frame-ancestors 'none'` — panel admina z cenami
- * i rozliczeniami nie ma powodu dać się osadzić w cudzej ramce (clickjacking).
- * HSTS włączamy dopiero na produkcji, żeby nie zablokować lokalnego http.
+ * CSP **nie ma tutaj**, tylko w `src/middleware.ts`: nonce musi być inny
+ * przy każdej odpowiedzi, a ten plik potrafi wyłącznie wartości stałe.
+ * Tu zostaje to, co się nie zmienia.
  *
- * `script-src` ma `'unsafe-inline'`, bo Next wstrzykuje inline'owe skrypty
- * hydracji bez nonce'a. To świadomy kompromis: CSP nadal odcina skrypty
- * z obcych domen, a sama aplikacja nie renderuje HTML-a od użytkownika
- * (React escapuje wszystko, nie używamy `dangerouslySetInnerHTML`).
+ * `X-Frame-Options: DENY` dubluje `frame-ancestors 'none'` z CSP — panel
+ * z cenami i rozliczeniami nie ma powodu dać się osadzić w cudzej ramce,
+ * a ten nagłówek obejmuje też odpowiedzi, których middleware nie dotyka.
+ * HSTS włączamy dopiero na produkcji, żeby nie zablokować lokalnego http.
  */
-const csp = [
-  "default-src 'self'",
-  "base-uri 'self'",
-  "form-action 'self'",
-  "frame-ancestors 'none'",
-  "object-src 'none'",
-  "img-src 'self' data: blob:",
-  "style-src 'self' 'unsafe-inline'",
-  "script-src 'self' 'unsafe-inline'",
-  "connect-src 'self'",
-  "font-src 'self' data:",
-].join("; ");
-
 const securityHeaders = [
-  { key: "Content-Security-Policy", value: csp },
   { key: "X-Frame-Options", value: "DENY" },
   { key: "X-Content-Type-Options", value: "nosniff" },
   { key: "Referrer-Policy", value: "same-origin" },

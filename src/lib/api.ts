@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { ZodError } from "zod";
 import { AppError } from "@/lib/errors";
+import { logError } from "@/lib/log";
 import {
   checkRateLimit,
   clientKey,
@@ -50,9 +51,9 @@ export async function apiHandler<T>(
         { status: error.status }
       );
     }
-    console.error("Błąd API:", error);
+    const id = logError("API", error);
     return NextResponse.json(
-      { error: { code: "INTERNAL_ERROR", message: "Błąd serwera." } },
+      { error: { code: "INTERNAL_ERROR", message: `Błąd serwera. (${id})` } },
       { status: 500 }
     );
   }

@@ -1,5 +1,6 @@
 import { ZodError } from "zod";
 import { AppError } from "@/lib/errors";
+import { logError } from "@/lib/log";
 
 export type ActionState = {
   ok: boolean;
@@ -31,8 +32,11 @@ export function toActionState(error: unknown): ActionState {
   if (error instanceof AppError) {
     return { ok: false, message: error.message };
   }
-  console.error("Nieobsłużony błąd akcji:", error);
-  return { ok: false, message: "Coś poszło nie tak. Spróbuj ponownie." };
+  const id = logError("Akcja", error);
+  return {
+    ok: false,
+    message: `Coś poszło nie tak. Spróbuj ponownie. (${id})`,
+  };
 }
 
 /** FormData -> zwykły obiekt (puste stringi zostawiamy walidacji). */

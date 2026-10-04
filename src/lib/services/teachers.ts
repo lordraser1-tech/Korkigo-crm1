@@ -8,6 +8,7 @@ import { hashPassword, verifyPassword } from "@/lib/password";
 import {
   availabilitySlotSchema,
   changePasswordSchema,
+  setPasswordSchema,
   availabilityDaySchema,
   copyAvailabilitySchema,
   copyWeekToMonthSchema,
@@ -192,9 +193,7 @@ export async function setTeacherPassword(
   if (actor.role !== "ADMIN") {
     throw new ForbiddenError("Hasło nauczyciela resetuje administrator.");
   }
-  if (newPassword.length < 8) {
-    throw new ValidationError("Hasło musi mieć min. 8 znaków.");
-  }
+  const { newPassword: password } = setPasswordSchema.parse({ newPassword });
   const teacher = await prisma.teacherProfile.findUnique({
     where: { id: teacherId },
     select: { userId: true },
@@ -204,7 +203,7 @@ export async function setTeacherPassword(
   await prisma.user.update({
     where: { id: teacher.userId },
     data: {
-      passwordHash: await hashPassword(newPassword),
+      passwordHash: await hashPassword(password),
       // Reset hasła przez admina wylogowuje nauczyciela ze wszystkich urządzeń.
       sessionsValidFrom: new Date(),
       failedLogins: 0,

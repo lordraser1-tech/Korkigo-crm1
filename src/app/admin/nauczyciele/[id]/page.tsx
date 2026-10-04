@@ -23,6 +23,7 @@ import { StudentTable } from "@/components/student-table";
 import { currentMonthKey, formatMonthLabel } from "@/lib/datetime";
 import { formatPLN } from "@/lib/money";
 import { PageHeader, StatCard } from "@/components/ui";
+import { PASSWORD_HINT, MIN_PASSWORD_LENGTH } from "@/lib/password-policy";
 
 export default async function AdminTeacherPage({
   params,
@@ -138,7 +139,8 @@ export default async function AdminTeacherPage({
                 name="newPassword"
                 type="password"
                 required
-                hint="Min. 8 znaków. Przekaż je nauczycielowi bezpiecznym kanałem."
+                minLength={MIN_PASSWORD_LENGTH}
+                hint={`${PASSWORD_HINT} Przekaż je nauczycielowi bezpiecznym kanałem.`}
               />
             </ActionForm>
           </div>

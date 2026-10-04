@@ -15,7 +15,6 @@ import {
   setLessonStatus,
   updateLesson,
 } from "@/lib/services/lessons";
-import { recordPayout } from "@/lib/services/payouts";
 import { createLessonInvoice } from "@/lib/services/billing";
 import {
   createAdmin,

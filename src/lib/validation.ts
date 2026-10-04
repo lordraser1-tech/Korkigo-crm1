@@ -1,4 +1,9 @@
 import { z } from "zod";
+import {
+  MAX_PASSWORD_LENGTH,
+  checkPassword,
+  passwordProblemMessage,
+} from "@/lib/password-policy";
 
 const trimmed = z.string().trim();
 
@@ -85,6 +90,15 @@ const optionalDate = <T extends z.ZodTypeAny>(base: T) =>
     .union([base, z.literal(""), z.null(), z.undefined()])
     .transform((v) => (v === "" || v === null || v === undefined ? null : (v as string)));
 
+/**
+ * Siła hasła stoi w `password-policy.ts` — tutaj tylko ją wołamy, żeby
+ * reguła nie rozjechała się między formularzem a resetem przez admina.
+ */
+const newPassword = z.string().max(MAX_PASSWORD_LENGTH).superRefine((value, ctx) => {
+  const problem = checkPassword(value);
+  if (problem) ctx.addIssue({ code: z.ZodIssueCode.custom, message: passwordProblemMessage(problem) });
+});
+
 export const loginSchema = z.object({
   email: trimmed.toLowerCase().email("Podaj poprawny adres e-mail."),
   password: z.string().min(1, "Podaj hasło."),
@@ -124,7 +138,7 @@ export const studentUpdateSchema = studentCreateSchema.partial();
 
 export const teacherCreateSchema = z.object({
   email: trimmed.toLowerCase().email("Podaj poprawny adres e-mail."),
-  password: z.string().min(8, "Hasło musi mieć min. 8 znaków.").max(200),
+  password: newPassword,
   firstName: trimmed.min(1, "Imię jest wymagane.").max(80),
   lastName: trimmed.min(1, "Nazwisko jest wymagane.").max(80),
   phone: optionalText(40),
@@ -173,10 +187,13 @@ export const lessonUpdateSchema = z.object({
   status: lessonStatusSchema.optional(),
 });
 
+/** Reset hasła nauczyciela przez admina — ta sama poprzeczka co wszędzie. */
+export const setPasswordSchema = z.object({ newPassword });
+
 export const changePasswordSchema = z
   .object({
     currentPassword: z.string().min(1, "Podaj obecne hasło."),
-    newPassword: z.string().min(8, "Nowe hasło musi mieć min. 8 znaków.").max(200),
+    newPassword,
     confirmPassword: z.string().min(1, "Powtórz nowe hasło."),
   })
   .refine((v) => v.newPassword === v.confirmPassword, {

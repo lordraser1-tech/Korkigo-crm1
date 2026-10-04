@@ -5,6 +5,7 @@ import { createTeacherAction } from "@/app/actions/teachers";
 import { ActionForm, Field } from "@/components/forms";
 import { SearchFilter } from "@/components/search-filter";
 import { Badge, EmptyState, PageHeader } from "@/components/ui";
+import { PASSWORD_HINT, MIN_PASSWORD_LENGTH } from "@/lib/password-policy";
 
 export default async function AdminTeachersPage() {
   const actor = await requirePage("ADMIN");
@@ -124,7 +125,8 @@ export default async function AdminTeachersPage() {
               name="password"
               type="password"
               required
-              hint="Min. 8 znaków."
+              minLength={MIN_PASSWORD_LENGTH}
+              hint={PASSWORD_HINT}
             />
             <Field label="Telefon" name="phone" />
             <Field

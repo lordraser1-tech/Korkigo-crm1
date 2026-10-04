@@ -16,6 +16,7 @@ import { GoogleCalendarCard } from "@/components/google-calendar-card";
 import { formatPLN } from "@/lib/money";
 import { TwoFactorCard } from "@/components/two-factor-card";
 import { PageHeader } from "@/components/ui";
+import { PASSWORD_HINT, MIN_PASSWORD_LENGTH } from "@/lib/password-policy";
 
 export default async function TeacherSettingsPage({
   searchParams,
@@ -146,7 +147,14 @@ export default async function TeacherSettingsPage({
               resetOnSuccess
             >
               <Field label="Obecne hasło" name="currentPassword" type="password" required />
-              <Field label="Nowe hasło" name="newPassword" type="password" required />
+              <Field
+                label="Nowe hasło"
+                name="newPassword"
+                type="password"
+                required
+                minLength={MIN_PASSWORD_LENGTH}
+                hint={PASSWORD_HINT}
+              />
               <Field label="Powtórz nowe hasło" name="confirmPassword" type="password" required />
             </ActionForm>
           </div>

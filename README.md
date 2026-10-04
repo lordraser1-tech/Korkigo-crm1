@@ -393,6 +393,8 @@ src/
                        # finance, billing, schedule, ndg, messages,
                        # payouts, reminders, calendar-sync, evidence
     policy.ts          # progi regulaminu (odwołania, wypłaty) — jedno miejsce
+    password-policy.ts # siła hasła: długość + lista zakazanych
+    log.ts             # błędy do logu bez danych osobowych
     reminders/         # treść przypomnień + adaptery kanałów
     google/            # OAuth Google + zapis zdarzeń w kalendarzu
     validation.ts      # schematy Zod
@@ -525,22 +527,43 @@ Stan po przeglądzie przed wdrożeniem:
   zachowuje dokumenty księgowe. Przegląd retencji podpowiada, przy kim warto
   to rozważyć, i nic nie kasuje sam.
 
+- **polityka haseł**: min. 12 znaków i lista zakazanych (`src/lib/password-policy.ts`),
+  bez wymuszania wielkich liter i znaków specjalnych — za NIST SP 800-63B.
+  Obowiązuje każdą ścieżkę: zakładanie konta, zmianę własnego hasła, reset
+  przez admina i seed,
+- **CSP z nonce'em** zamiast `'unsafe-inline'` w `script-src`, losowanym przy
+  każdej odpowiedzi w `src/middleware.ts`,
+- **limit rozmiaru żądania** 256 kB — odrzucany, zanim cokolwiek go sparsuje,
+- **błędy w logach bez danych osobowych**: komunikat Prismy niesie wartości
+  pól, więc zapisujemy tylko pierwszy wiersz, kod błędu i nazwy pól. Użytkownik
+  dostaje ośmioznakowy identyfikator, po którym znajdziesz wpis w logu.
+
 Czego **nie** ma i warto o tym wiedzieć przed wystawieniem na świat:
 
-- licznik limitu żyje w pamięci procesu — zeruje się przy restarcie i nie jest
-  współdzielony między instancjami. Dla jednego serwera wystarcza; przy kilku
-  albo za CDN-em dołóż limit po stronie hostingu,
-- `script-src` w CSP ma `'unsafe-inline'`, bo Next wstrzykuje inline'owe skrypty
-  hydracji bez nonce'a; CSP nadal odcina skrypty z obcych domen,
-- `npm audit` zgłasza podatności `postcss` ciągnięte przez Next. Dotyczą
-  przetwarzania CSS w czasie builda, a nie danych od użytkowników — aktualizuj
-  Next w ramach wersji 15.x, gdy wyjdzie poprawka.
+- licznik limitu zapytań żyje w pamięci procesu — zeruje się przy restarcie
+  i nie jest współdzielony między instancjami. Dla jednego serwera wystarcza;
+  przy kilku albo za CDN-em dołóż limit po stronie hostingu. Blokada logowania
+  po nieudanych próbach jest osobną warstwą i **siedzi w bazie**, więc restart
+  jej nie kasuje,
+- klucz limitu bierze się z `x-forwarded-for`. **Nie wystawiaj aplikacji
+  bezpośrednio na świat** — bez proxy, które ten nagłówek nadpisuje, każdy może
+  go podać dowolny i ominąć limit,
+- limit rozmiaru żądania opiera się na `Content-Length`; żądanie „chunked" go
+  ominie, więc limit po stronie hostingu zostaje drugą barierą,
+- `style-src` w CSP nadal ma `'unsafe-inline'` — React wstawia style atrybutem,
+  którego nonce nie obejmuje. Stylem nie wykonasz kodu,
+- `npm audit` zgłasza jeszcze podatności w `braces`/`micromatch` (przez
+  `eslint-config-next`) i `@vitest/mocker`. Oba łańcuchy to **zależności
+  deweloperskie** — nie trafiają na produkcję — a dla `braces` nie ma jeszcze
+  wersji z poprawką. Podatności `postcss` i `deepmerge-ts` są domknięte przez
+  `overrides` w `package.json`.
 
 ## Wdrożenie
 
 Potrzebny jest Postgres i host uruchamiający Node (Railway, Vercel + Neon/Supabase).
-Zmienne środowiskowe: `DATABASE_URL`, `AUTH_SECRET` (oraz `SEED_ADMIN_*` przy
-pierwszym seedzie). Przypomnienia dokładają `CRON_SECRET`, a zależnie od kanału
+Zmienne środowiskowe: `DATABASE_URL`, `AUTH_SECRET` oraz `SEED_ADMIN_EMAIL`
+i `SEED_ADMIN_PASSWORD` przy pierwszym seedzie — hasło **nie ma wartości
+domyślnej** i musi przejść politykę haseł, inaczej seed się nie wykona. Przypomnienia dokładają `CRON_SECRET`, a zależnie od kanału
 `TELEGRAM_BOT_TOKEN` / `TELEGRAM_BOT_NAME` / `TELEGRAM_WEBHOOK_SECRET` albo
 `SMS_PROVIDER` / `SMS_API_TOKEN` / `SMS_SENDER` — komplet w `.env.example`.
 Synchronizacja kalendarza dokłada `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`

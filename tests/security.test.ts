@@ -128,8 +128,8 @@ describeDb("logowanie i sesje", () => {
     await new Promise((r) => setTimeout(r, 1100));
     await changeOwnPassword(anna, {
       currentPassword: "x",
-      newPassword: "noweHaslo123",
-      confirmPassword: "noweHaslo123",
+      newPassword: "zielona-latarnia-4-kropki",
+      confirmPassword: "zielona-latarnia-4-kropki",
     } as never).catch(() => undefined);
 
     // Hasło testowego konta to nie „x", więc zmiana miała prawo nie przejść;
@@ -141,6 +141,19 @@ describeDb("logowanie i sesje", () => {
     expect(po.sessionsValidFrom.getTime()).toBe(przed.sessionsValidFrom.getTime());
   });
 
+  /**
+   * Reguła siły hasła stoi w `password-policy.ts` i obowiązuje KAŻDĄ ścieżkę
+   * ustawiania hasła, także reset przez admina — inaczej admin byłby wygodną
+   * furtką do słabego hasła nauczyciela.
+   */
+  it("reset przez admina nie przyjmie słabego hasła", async () => {
+    for (const weak of ["krotkie", "haslo123456", "123456789012"]) {
+      await expect(
+        setTeacherPassword(admin, anna.teacherProfileId, weak)
+      ).rejects.toThrow();
+    }
+  });
+
   it("reset hasła przez admina wylogowuje nauczyciela ze wszystkich urządzeń", async () => {
     const przed = await prisma.user.findUniqueOrThrow({
       where: { id: anna.userId },
@@ -148,7 +161,7 @@ describeDb("logowanie i sesje", () => {
     });
 
     await new Promise((r) => setTimeout(r, 1100));
-    await setTeacherPassword(admin, anna.teacherProfileId, "noweHaslo123");
+    await setTeacherPassword(admin, anna.teacherProfileId, "zielona-latarnia-4-kropki");
 
     const po = await prisma.user.findUniqueOrThrow({
       where: { id: anna.userId },

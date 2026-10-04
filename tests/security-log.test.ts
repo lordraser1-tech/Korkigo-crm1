@@ -118,7 +118,7 @@ describeDb("dziennik bezpieczeństwa", () => {
   it("reset hasła przez admina zostawia ślad i zdejmuje blokadę", async () => {
     for (let i = 0; i < 10; i += 1) await registerFailedLogin(anna.userId);
 
-    await setTeacherPassword(admin, anna.teacherProfileId, "noweHaslo123");
+    await setTeacherPassword(admin, anna.teacherProfileId, "zielona-latarnia-4-kropki");
 
     const events = await listSecurityEvents(admin, { type: "PASSWORD_RESET" });
     expect(events).toHaveLength(1);

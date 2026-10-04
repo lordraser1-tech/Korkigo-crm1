@@ -8,6 +8,7 @@ import { changeOwnPasswordAction } from "@/app/actions/teachers";
 import { ActionForm, Field } from "@/components/forms";
 import { TwoFactorCard } from "@/components/two-factor-card";
 import { PageHeader } from "@/components/ui";
+import { PASSWORD_HINT, MIN_PASSWORD_LENGTH } from "@/lib/password-policy";
 
 export default async function AdminSettingsPage() {
   const actor = await requirePage("ADMIN");
@@ -97,7 +98,14 @@ export default async function AdminSettingsPage() {
             resetOnSuccess
           >
             <Field label="Obecne hasło" name="currentPassword" type="password" required />
-            <Field label="Nowe hasło" name="newPassword" type="password" required />
+            <Field
+              label="Nowe hasło"
+              name="newPassword"
+              type="password"
+              required
+              minLength={MIN_PASSWORD_LENGTH}
+              hint={PASSWORD_HINT}
+            />
             <Field label="Powtórz nowe hasło" name="confirmPassword" type="password" required />
           </ActionForm>
 

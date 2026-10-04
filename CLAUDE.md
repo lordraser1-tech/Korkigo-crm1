@@ -355,9 +355,42 @@ Testy: `tests/evidence.test.ts`.
   Dotyczy tokenów Google: wyciek samej bazy nie może dawać dostępu do cudzych
   kalendarzy. Wartość bez prefiksu `v1:` czytamy jako jawną, żeby wdrożenie
   nie zerwało istniejących połączeń,
-- **nagłówki bezpieczeństwa siedzą w `next.config.ts`** — najważniejszy jest
-  `frame-ancestors 'none'`: panel z cenami i rozliczeniami nie ma powodu dać
-  się osadzić w cudzej ramce. HSTS włącza się tylko na produkcji.
+- **siła hasła siedzi w `src/lib/password-policy.ts`** i nigdzie indziej —
+  żadnej liczby ani listy nie powtarzamy w schemacie, serwisie, seedzie ani
+  w UI (podpowiedź czyta `PASSWORD_HINT`). Reguły idą za NIST SP 800-63B:
+  **długość (12) i lista zakazanych**, bez „wielka litera, cyfra, znak
+  specjalny" — te dają `Haslo123!`, czyli hasło formalnie zgodne i zgadywane
+  w pierwszej setce prób. Porównanie z listą idzie po formie uproszczonej
+  (małe litery, bez znaków specjalnych, bez ogona cyfr), dzięki czemu wpis
+  `haslo` zatrzymuje też `Haslo-123!`. `ł` zamieniamy **przed** `normalize("NFD")`,
+  bo jako jedyna polska litera nie ma formy rozkładalnej. Seed **nie ma
+  domyślnego hasła admina** — wcześniej był nim `admin12345` z publicznego
+  repozytorium,
+- **CSP ma nonce, nie `'unsafe-inline'`**, i dlatego mieszka w `src/middleware.ts`,
+  a nie w `next.config.ts` — nonce musi być inny przy każdej odpowiedzi,
+  a config potrafi tylko stałe. Idzie w obie strony: Next dokleja go do swoich
+  skryptów hydracji dopiero wtedy, gdy znajdzie go w nagłówkach **żądania**.
+  `strict-dynamic` jest konieczne, bo skrypt startowy dociąga kolejne paczki
+  sam. `style-src` zostaje z `'unsafe-inline'`: React wstawia style atrybutem,
+  którego nonce nie obejmuje — stylem nie wykonasz kodu. **Strona 404 musi być
+  `force-dynamic`** (`src/app/not-found.tsx`): do statycznego HTML-a nie da się
+  wstrzyknąć nonce'a i cała strona leciała na naruszeniach CSP,
+- **limit rozmiaru ciała żądania** (`MAX_BODY_BYTES` w `src/middleware.ts`,
+  256 kB) stoi przed limitem zapytań, więc obejmuje też akcje serwera, nie samo
+  `/api`. Opiera się na `Content-Length`, bo middleware nie policzy bajtów bez
+  zjedzenia strumienia — nadawca piszący „chunked" ten próg ominie, dlatego
+  limit po stronie hostingu zostaje **drugą** barierą, nie alternatywą,
+- **błędy logujemy przez `logError()`** (`src/lib/log.ts`), nigdy
+  `console.error("…", error)`. Komunikat Prismy niesie **wartości pól** —
+  imię ucznia, e-mail i telefon opiekuna — a logi hostingu nie są objęte naszą
+  retencją ani umową powierzenia. Stąd: tylko pierwszy wiersz komunikatu,
+  kod błędu, nazwy pól z `meta` (nigdy wartości) i same ramki „at …". Maski
+  idą w kolejności token → numer, bo wzorzec numeru zjada cyfrowy ogon tokena.
+  Każdy wpis dostaje ośmioznakowy identyfikator pokazywany też użytkownikowi,
+- **nagłówki bezpieczeństwa siedzą w `next.config.ts`** — to, co stałe:
+  `X-Frame-Options: DENY` (dubluje `frame-ancestors` dla odpowiedzi poza
+  middleware), nosniff, Referrer-Policy, Permissions-Policy. HSTS włącza się
+  tylko na produkcji.
 
 - **limit zapytań siedzi w `src/middleware.ts`**, nie w poszczególnych trasach —
   obejmuje też te dopisane w przyszłości. Logowanie ma ostrzejszy próg
@@ -409,7 +442,8 @@ Testy: `tests/evidence.test.ts`.
 
 Testy: `tests/security.test.ts`, `tests/rate-limit.test.ts`,
 `tests/security-log.test.ts`, `tests/totp.test.ts`, `tests/two-factor.test.ts`,
-`tests/qr.test.ts`, `tests/validation.test.ts`.
+`tests/qr.test.ts`, `tests/validation.test.ts`,
+`tests/password-policy.test.ts`, `tests/middleware.test.ts`.
 
 ## RODO — eksport, anonimizacja, retencja
 

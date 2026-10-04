@@ -18,11 +18,31 @@ import {
 import { createNdgLimit, updateNdgSettings } from "../src/lib/services/ndg";
 import { sendMessage } from "../src/lib/services/messages";
 import type { AdminActor } from "../src/lib/auth";
+import { checkPassword, passwordProblemMessage } from "../src/lib/password-policy";
 
 const prisma = new PrismaClient();
 
 const ADMIN_EMAIL = (process.env.SEED_ADMIN_EMAIL ?? "admin@korkigo.pl").toLowerCase();
-const ADMIN_PASSWORD = process.env.SEED_ADMIN_PASSWORD ?? "admin12345";
+
+/**
+ * Hasło admina NIE ma wartości domyślnej. Wcześniej było nią `admin12345`:
+ * kto wdrożył CRM bez ustawienia zmiennej, dostawał konto z pełnym wglądem
+ * w dane uczniów i finanse, zamknięte hasłem z publicznego repozytorium.
+ * Lepiej, żeby seed się nie wykonał, niż żeby wykonał się tak.
+ */
+function adminPassword(): string {
+  const value = process.env.SEED_ADMIN_PASSWORD;
+  if (!value) {
+    throw new Error(
+      "Ustaw SEED_ADMIN_PASSWORD w .env — seed nie wymyśli hasła za Ciebie."
+    );
+  }
+  const problem = checkPassword(value);
+  if (problem) {
+    throw new Error(`SEED_ADMIN_PASSWORD: ${passwordProblemMessage(problem)}`);
+  }
+  return value;
+}
 
 function money(value: number): Prisma.Decimal {
   return new Prisma.Decimal(value.toFixed(2));
@@ -66,7 +86,7 @@ function availabilityWeeks(
 }
 
 async function seedAdmin(): Promise<AdminActor> {
-  const passwordHash = await bcrypt.hash(ADMIN_PASSWORD, 12);
+  const passwordHash = await bcrypt.hash(adminPassword(), 12);
   const admin = await prisma.user.upsert({
     where: { email: ADMIN_EMAIL },
     update: { role: "ADMIN" },
