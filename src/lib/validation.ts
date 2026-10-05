@@ -319,6 +319,42 @@ export const lessonTopicSchema = z.object({
   topic: optionalText(200),
 });
 
+// ---------- BAZA WIEDZY ----------
+
+/**
+ * Adres materiału. Dopuszczamy **wyłącznie http(s)** i to nie jest kosmetyka:
+ * `javascript:alert(1)` wpisane w to pole wykonałoby się w przeglądarce
+ * nauczyciela po kliknięciu linku, z jego sesją. `data:` pozwalałby podać
+ * własny dokument HTML z tego samego miejsca w interfejsie. Admin jest
+ * zaufany, ale jedna wklejka z internetu nie może zamieniać się w kod.
+ */
+const linkUrl = trimmed
+  .min(1, "Podaj adres materiału.")
+  .max(2000, "Adres jest zbyt długi.")
+  .refine(
+    (value) => {
+      try {
+        const { protocol } = new URL(value);
+        return protocol === "http:" || protocol === "https:";
+      } catch {
+        return false;
+      }
+    },
+    { message: "Adres musi zaczynać się od http:// albo https://" }
+  );
+
+export const knowledgeEntrySchema = z.object({
+  subjectId: trimmed.min(1, "Wybierz przedmiot."),
+  title: trimmed.min(1, "Podaj nazwę materiału.").max(200),
+  url: linkUrl,
+  description: optionalText(500).transform((v) => v ?? ""),
+});
+
+/** Edycja: przedmiotu nie przenosimy, więc zostaje tylko treść wpisu. */
+export const knowledgeEntryUpdateSchema = knowledgeEntrySchema.omit({
+  subjectId: true,
+});
+
 // ---------- NOTATKI Z LEKCJI ----------
 
 /**

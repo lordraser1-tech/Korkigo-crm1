@@ -185,6 +185,25 @@ pozycji w menu) i „zapisane notatki".
 - w karcie ucznia stoi skrót z trzema ostatnimi notatkami i odnośnikiem do
   pełnej listy tego ucznia.
 
+## Baza wiedzy
+
+Linki do materiałów pomocniczych — podręczników, słowników, kanałów —
+z **osobną zakładką dla każdego przedmiotu**. Dodaje, poprawia i kasuje
+wyłącznie administrator (`/admin/baza-wiedzy`); nauczyciel czyta
+(`/nauczyciel/baza-wiedzy`).
+
+- **nauczyciel widzi tylko swoje przedmioty**: te, do których administrator
+  ustawił mu stawkę. Stawka jest w tym systemie przypisaniem — bez niej
+  nauczyciel i tak nie zapisze lekcji z danego przedmiotu,
+- zawężenie dzieje się w zapytaniu do bazy, nie przez ukrycie zakładek:
+  podstawiony `?przedmiot=` z cudzego przedmiotu nic nie pokaże,
+- **przyjmujemy wyłącznie adresy http:// i https://**. `javascript:` wpisane
+  w to pole wykonałoby się w przeglądarce nauczyciela po kliknięciu linku,
+- linki otwierają się w nowej karcie z `rel="noopener"`, a pod tytułem widać
+  adres strony, dokąd prowadzą,
+- przedmiot wyłączony zostaje w panelu admina jako archiwum, ale znika
+  nauczycielom.
+
 ## Wiadomości
 
 Administrator pisze do **jednego nauczyciela albo do wszystkich naraz**
@@ -414,7 +433,8 @@ src/
     auth.ts            # Actor (kto pyta) + strażnicy ról
     services/          # LOGIKA I UPRAWNIENIA: students, teachers, lessons,
                        # finance, billing, schedule, ndg, messages,
-                       # payouts, reminders, calendar-sync, evidence
+                       # payouts, reminders, calendar-sync, evidence,
+                       # lesson-notes, knowledge-base
     policy.ts          # progi regulaminu (odwołania, wypłaty) — jedno miejsce
     password-policy.ts # siła hasła: długość + lista zakazanych
     log.ts             # błędy do logu bez danych osobowych
@@ -488,7 +508,10 @@ zablokowanych) i licznik nieprzeczytanych stojący za czerwoną kropką.
 Notatki z lekcji (`tests/lesson-notes.test.ts`) pilnują granicy ról — w tym
 tego, że przepisanie ucznia innemu nauczycielowi **nie** przenosi notatek
 z dawnych lekcji, że ucznia bierzemy z lekcji a nie z formularza i że szukanie
-admina nie wycieka nauczycielowi.
+admina nie wycieka nauczycielowi. Baza wiedzy
+(`tests/knowledge-base.test.ts`) sprawdza zakres przedmiotów nauczyciela,
+odmowę zapisu dla roli TEACHER i odrzucanie adresów innych niż http(s) —
+także przy edycji.
 Dochodzą do tego: progi regulaminu odwołań (`tests/policy.test.ts`, bez bazy),
 odwoływanie lekcji wraz z korektą kwoty zastrzeżoną dla admina i zakres edycji
 serii (`tests/lessons.test.ts`), wypłaty — w tym to, że lekcja nie trafi na dwie
@@ -602,9 +625,8 @@ i `secure` w trybie produkcyjnym — wymaga HTTPS.
 
 ## Co dalej
 
-Z fazy 2 została baza wiedzy per uczeń (`KnowledgeBaseEntry` jest w schemacie,
-ale nie ma jeszcze kodu) oraz wysyłka notatki do ucznia — dziś jest samo
-kopiowanie do schowka, a kanały Telegram/SMS żyją w module przypomnień. Z fazy 3
+Z fazy 2 została wysyłka notatki do ucznia — dziś jest samo kopiowanie do
+schowka, a kanały Telegram/SMS żyją w module przypomnień. Z fazy 3
 zostały automatyczne wezwania do zapłaty i pełne raporty (**reguły podatkowe do
 potwierdzenia z księgowym**). Faza 4 to wsparcie AI przy notatkach.
 

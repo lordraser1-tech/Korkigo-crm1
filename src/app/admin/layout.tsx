@@ -12,6 +12,7 @@ const NAV: NavItem[] = [
   { href: "/admin/rachunki", label: "Rachunki" },
   { href: "/admin/platnosci", label: "Płatności" },
   { href: "/admin/notatki", label: "Notatki z lekcji" },
+  { href: "/admin/baza-wiedzy", label: "Baza wiedzy" },
   { href: "/admin/wiadomosci", label: "Wiadomości" },
   { href: "/admin/ustawienia", label: "Ustawienia" },
   { href: "/admin/ndg", label: "Limit NDG" },

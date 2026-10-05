@@ -50,7 +50,7 @@ o lekcji (Telegram/SMS), widok miesięczny kalendarza, synchronizacja
 z Google Calendar (jednokierunkowa, per nauczyciel) oraz ewidencja przychodu
 pod PIT-36 (CSV + wydruk).
 
-Z menu makiety nie działa już tylko „Baza wiedzy” (faza 2, jeszcze nie ruszona).
+Wszystkie pozycje z menu makiety już działają.
 
 Makieta panelu nauczyciela już istnieje (Claude Artifact — Design canvas),
 z menu: Pulpit, Moi uczniowie, Kalendarz lekcji, Moje wypłaty, Notatki z lekcji,
@@ -58,8 +58,8 @@ Baza wiedzy, Wiadomości, Ustawienia.
 
 ## Kolejne fazy (nie teraz, ale schemat już to przewiduje)
 
-- **Faza 2 (zostało):** baza wiedzy per uczeń oraz wysyłka notatki do ucznia
-  (dziś jest samo kopiowanie do schowka)
+- **Faza 2 (zostało):** wysyłka notatki do ucznia (dziś jest samo kopiowanie
+  do schowka)
 - **Faza 3 (zostało):** automatyczne wezwania do zapłaty, pełne raporty —
   **to dotyka przepisów podatkowych; reguły/wzory do zweryfikowania
   z księgowym przed wdrożeniem w produkcji**
@@ -524,6 +524,45 @@ Wysyłka notatki do ucznia jeszcze nie istnieje — jest przycisk „Kopiuj
 notatkę" (schowek), a kanały (Telegram/SMS) żyją w module przypomnień.
 
 Testy: `tests/lesson-notes.test.ts`.
+
+## Baza wiedzy
+
+`src/lib/services/knowledge-base.ts`, panele `/admin/baza-wiedzy`
+i `/nauczyciel/baza-wiedzy`. Linki do materiałów pomocniczych, **jedna
+zakładka na przedmiot**. Pisze wyłącznie ADMIN, nauczyciel czyta.
+
+Model zmienił się względem fazy 1: `KnowledgeBaseEntry` było per **uczeń**
+(tytuł + treść), jest per **przedmiot** (tytuł + adres + opis). Tabela nigdy
+nie miała kodu, więc migracja `20261005100000_baza_wiedzy_per_przedmiot`
+podmienia kolumnę kluczową bez zachowywania czegokolwiek — i celowo dodaje
+`subjectId` jako NOT NULL bez wartości domyślnej, żeby wywalić się zamiast
+po cichu przypiąć ewentualne wiersze do przypadkowego przedmiotu.
+
+Niezmienniki:
+
+- **„przypisany przedmiot" = taki, do którego nauczyciel ma `TeacherRate`**
+  na którymkolwiek poziomie (`assignedSubjectIds`). To nie proteza z braku
+  lepszego pola: stawka JEST przypisaniem, bo bez niej `resolveLessonRates`
+  odrzuca zapis lekcji. Gdyby kiedyś powstało osobne przypisanie, zmienia się
+  **tylko ta funkcja**,
+- zawężenie idzie **w zapytaniu**, nie przez ukrycie zakładek — podstawiony
+  `?przedmiot=` z cudzego przedmiotu nie ma czego pokazać,
+- materiał z nieswojego przedmiotu daje `NotFoundError`, nie 403,
+- **adres musi być `http(s)`** (`linkUrl` w `validation.ts`) i to nie jest
+  kosmetyka: `javascript:…` w `href` wykonałoby się po kliknięciu, w sesji
+  nauczyciela, a `data:` pozwoliłby podstawić własny dokument HTML. Walidacja
+  obowiązuje też przy edycji,
+- linki mają `target="_blank"` **i `rel="noopener noreferrer"`** — bez
+  `noopener` otwarta strona dostaje `window.opener` i może przestawić naszą
+  kartę pod siebie,
+- pod tytułem pokazujemy host adresu, żeby było widać, dokąd prowadzi,
+  **przed** kliknięciem,
+- przedmiot wyłączony zostaje adminowi (archiwum), ale znika nauczycielowi,
+- materiał nie zawiera kwot, więc ten sam komponent jest bezpieczny dla obu
+  ról — różni się wyłącznie tym, ile zakładek widać,
+- usunięcie przedmiotu kasuje jego materiały (`onDelete: Cascade`).
+
+Testy: `tests/knowledge-base.test.ts`.
 
 ## Wiadomości
 

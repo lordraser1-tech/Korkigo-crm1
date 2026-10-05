@@ -17,7 +17,7 @@ function buildNav(unread: number, awaitingNotes: number): NavItem[] {
       count: awaitingNotes,
       countLabel: "lekcji bez notatki",
     },
-    { href: "#", label: "Baza wiedzy", soon: true },
+    { href: "/nauczyciel/baza-wiedzy", label: "Baza wiedzy" },
     {
       href: "/nauczyciel/wiadomosci",
       label: "Wiadomości",

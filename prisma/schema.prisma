@@ -149,7 +149,6 @@ model Student {
 
   lessons        Lesson[]
   notes          LessonNote[]
-  knowledgeBase  KnowledgeBaseEntry[]
   invoices       Invoice[]
   payments       Payment[]
   rates          StudentRate[]
@@ -170,7 +169,8 @@ model Subject {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  levels SubjectLevel[]
+  levels        SubjectLevel[]
+  knowledgeBase KnowledgeBaseEntry[]
 
   @@map("subjects")
 }
@@ -399,17 +399,23 @@ model LessonNote {
 
 // ---------- BAZA WIEDZY (per uczeń) ----------
 
+/// Materiał pomocniczy przypięty do PRZEDMIOTU (nie do ucznia): podręcznik,
+/// zestaw ćwiczeń, kanał na YouTube. Dodaje wyłącznie admin; nauczyciel czyta
+/// materiały tych przedmiotów, do których ma stawkę (`TeacherRate`).
 model KnowledgeBaseEntry {
   id        String  @id @default(cuid())
-  studentId String
-  student   Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  subjectId String
+  subject   Subject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
 
-  title   String
-  content String @db.Text
+  title       String
+  /// Wyłącznie http(s) — patrz `linkUrl` w validation.ts.
+  url         String
+  description String @default("") @db.Text
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  @@index([subjectId])
   @@map("knowledge_base_entries")
 }
 
