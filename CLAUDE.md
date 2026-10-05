@@ -50,8 +50,7 @@ o lekcji (Telegram/SMS), widok miesięczny kalendarza, synchronizacja
 z Google Calendar (jednokierunkowa, per nauczyciel) oraz ewidencja przychodu
 pod PIT-36 (CSV + wydruk).
 
-Z menu makiety działają już wszystkie pozycje poza „Notatki z lekcji”
-i „Baza wiedzy” (faza 2, jeszcze nie ruszone).
+Z menu makiety nie działa już tylko „Baza wiedzy” (faza 2, jeszcze nie ruszona).
 
 Makieta panelu nauczyciela już istnieje (Claude Artifact — Design canvas),
 z menu: Pulpit, Moi uczniowie, Kalendarz lekcji, Moje wypłaty, Notatki z lekcji,
@@ -59,8 +58,8 @@ Baza wiedzy, Wiadomości, Ustawienia.
 
 ## Kolejne fazy (nie teraz, ale schemat już to przewiduje)
 
-- **Faza 2 (zostało):** notatki z lekcji (szablon: co było / jak poszło / cel /
-  co dalej, z opcją kopiowania i wysyłki do ucznia), baza wiedzy per uczeń
+- **Faza 2 (zostało):** baza wiedzy per uczeń oraz wysyłka notatki do ucznia
+  (dziś jest samo kopiowanie do schowka)
 - **Faza 3 (zostało):** automatyczne wezwania do zapłaty, pełne raporty —
   **to dotyka przepisów podatkowych; reguły/wzory do zweryfikowania
   z księgowym przed wdrożeniem w produkcji**
@@ -491,6 +490,40 @@ Niezmienniki:
 Kolory statusów pochodzą ze stałej palety (`--color-status-*` w `globals.css`)
 i zawsze idą w parze z ikoną i podpisem — kolor nigdy nie niesie znaczenia sam.
 Testy: `tests/ndg.test.ts`.
+
+## Notatki z lekcji
+
+`src/lib/services/lesson-notes.ts`, panele `/nauczyciel/notatki` i
+`/admin/notatki`. Szablon z czterech pól: co było / jak poszło / cel / co dalej.
+
+- **zakres liczymy po nauczycielu LEKCJI** (`noteScope`), nie po dzisiejszym
+  opiekunie ucznia. Ucznia da się przepisać innemu nauczycielowi — zakres po
+  `student.teacherId` oddałby wtedy nowemu nauczycielowi notatki z zajęć,
+  których nie prowadził, i odciął autora od własnych. Notatka należy do lekcji,
+- **`studentId` bierzemy z lekcji, nigdy z wejścia.** Pole jest zdenormalizowane
+  po to, żeby dało się szukać po uczniu; gdyby przychodziło z formularza,
+  nauczyciel podpiąłby notatkę pod cudzego ucznia,
+- jedna notatka na lekcję (`LessonNote.lessonId` @unique) — zapis to zawsze
+  `upsert`, więc druga próba nadpisuje zamiast dublować,
+- notatka **nie zawiera żadnej kwoty**, więc ten sam komponent jest bezpieczny
+  dla obu ról — nie ma tu odpowiednika `selectFor` z cenami ucznia,
+- cudza notatka daje `NotFoundError`, a cudzy `teacherId` w filtrze jest
+  **ignorowany**, nie odrzucany — tak samo jak `resolveScope()` w grafiku,
+- pusta notatka (wszystkie cztery pola puste) jest odrzucana; jedno wypełnione
+  pole wystarczy,
+- „do uzupełnienia" to lekcje **zrealizowane i nieobecności** bez notatki.
+  Zaplanowanej nie ma czego opisywać, a odwołana się nie odbyła — wisiałyby na
+  liście w nieskończoność,
+- admin szuka **po stronie bazy** (`query` → `contains` z `mode: insensitive`),
+  nie przez ukrywanie wierszy w przeglądarce jak `SearchFilter`: notatek
+  przybywa po jednej z każdej lekcji. Szukanie obejmuje treść, ucznia,
+  nauczyciela, przedmiot i temat zajęć,
+- usunięcie lekcji kasuje notatkę (`onDelete: Cascade` w schemacie).
+
+Wysyłka notatki do ucznia jeszcze nie istnieje — jest przycisk „Kopiuj
+notatkę" (schowek), a kanały (Telegram/SMS) żyją w module przypomnień.
+
+Testy: `tests/lesson-notes.test.ts`.
 
 ## Wiadomości
 

@@ -9,8 +9,13 @@ export type NavItem = {
   soon?: boolean;
   /** Czerwona kropka: coś nowego czeka pod tym linkiem. */
   dot?: boolean;
-  /** Liczba przy kropce (np. nieprzeczytane wiadomości). */
+  /** Liczba na plakietce. Bez `dot` jest szara — przypomnienie, nie alarm. */
   count?: number;
+  /**
+   * Co ta liczba znaczy, dla czytnika ekranu. Bez tego plakietka mówiłaby
+   * „nieprzeczytanych" także tam, gdzie liczy coś zupełnie innego.
+   */
+  countLabel?: string;
 };
 
 export function AppShell({
@@ -63,12 +68,18 @@ export function AppShell({
                     />
                   ) : null}
                 </span>
-                {item.dot ? (
-                  <span className="rounded-full bg-red-600 px-1.5 text-[11px] font-semibold text-white">
+                {item.dot || (item.count ?? 0) > 0 ? (
+                  <span
+                    className={`rounded-full px-1.5 text-[11px] font-semibold ${
+                      item.dot
+                        ? "bg-red-600 text-white"
+                        : "bg-slate-200 text-slate-600"
+                    }`}
+                  >
                     {item.count && item.count > 0 ? item.count : ""}
                     <span className="sr-only">
                       {item.count && item.count > 0
-                        ? `${item.count} nieprzeczytanych`
+                        ? `${item.count} ${item.countLabel ?? "nieprzeczytanych"}`
                         : "nowe"}
                     </span>
                   </span>

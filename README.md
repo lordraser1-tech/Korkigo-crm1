@@ -154,13 +154,36 @@ i w kafelku dnia w `Grafiku`. Bez osobnej zakładki: pole jest zwinięte do lini
 gdzie widać lekcję — również w historii lekcji ucznia i w panelu admina.
 
 - to krótka notka (`Lesson.topic`, do 200 znaków), a nie pełny szablon notatki
-  z lekcji (co było / jak poszło / cel / co dalej) — ten zostaje na fazę 2
-  jako osobny model `LessonNote`,
+  z lekcji (co było / jak poszło / cel / co dalej) — ten siedzi osobno,
+  na zakładce „Notatki z lekcji”,
 - **temat wolno dopisać także do lekcji ujętej na rachunku**: termin i status są
   wtedy zamrożone, ale opis nie zmienia treści dokumentu, a nauczyciel uzupełnia
   go po zajęciach,
 - zakres jak wszędzie: nauczyciel edytuje temat tylko własnych lekcji (cudza
   lekcja to `404`), admin może poprawić każdy.
+
+## Notatki z lekcji
+
+Po zajęciach nauczyciel opisuje je szablonem z czterech pól: **co było / jak
+poszło / cel / co dalej**. Zakładka `Notatki z lekcji` dzieli się na dwie
+części: „do uzupełnienia" (odbyte lekcje bez notatki — stąd liczba przy
+pozycji w menu) i „zapisane notatki".
+
+- nauczyciel widzi **wyłącznie notatki ze swoich lekcji**, admin wszystkie
+  i może po nich szukać (`/admin/notatki`) — po treści, uczniu, nauczycielu,
+  przedmiocie i temacie zajęć,
+- zakres idzie po **nauczycielu lekcji**, nie po dzisiejszym opiekunie ucznia:
+  przepisanie ucznia nie oddaje nowemu nauczycielowi notatek z zajęć, których
+  nie prowadził, ani nie odcina autora od własnych,
+- jedna notatka na lekcję — ponowny zapis nadpisuje. Wystarczy wypełnić jedno
+  pole, ale notatki całkiem pustej nie zapiszemy,
+- na liście „do uzupełnienia" są lekcje **zrealizowane i nieobecności**.
+  Zaplanowanej nie ma czego opisywać, a odwołana się nie odbyła,
+- notatka **nie zawiera żadnych kwot**, więc widok jest ten sam dla obu ról,
+- „Kopiuj notatkę" wkleja ją do schowka jako zwykły tekst z etykietami — do
+  przesłania uczniowi. Wysyłki wprost z systemu jeszcze nie ma,
+- w karcie ucznia stoi skrót z trzema ostatnimi notatkami i odnośnikiem do
+  pełnej listy tego ucznia.
 
 ## Wiadomości
 
@@ -462,6 +485,10 @@ kwartału z limitów miesięcy, zmianę kwoty w trakcie roku, progi ostrzeżeń,
 prognozę, obie podstawy przychodu i pracę po wyłączeniu pilnowania limitu.
 Wiadomości sprawdzają zakres skrzynek, wysyłkę zbiorczą (z pominięciem kont
 zablokowanych) i licznik nieprzeczytanych stojący za czerwoną kropką.
+Notatki z lekcji (`tests/lesson-notes.test.ts`) pilnują granicy ról — w tym
+tego, że przepisanie ucznia innemu nauczycielowi **nie** przenosi notatek
+z dawnych lekcji, że ucznia bierzemy z lekcji a nie z formularza i że szukanie
+admina nie wycieka nauczycielowi.
 Dochodzą do tego: progi regulaminu odwołań (`tests/policy.test.ts`, bez bazy),
 odwoływanie lekcji wraz z korektą kwoty zastrzeżoną dla admina i zakres edycji
 serii (`tests/lessons.test.ts`), wypłaty — w tym to, że lekcja nie trafi na dwie
@@ -575,9 +602,9 @@ i `secure` w trybie produkcyjnym — wymaga HTTPS.
 
 ## Co dalej
 
-Z fazy 2 zostały notatki z lekcji (szablon co było / jak poszło / cel / co
-dalej) i baza wiedzy per uczeń — oba modele są już w schemacie
-(`LessonNote`, `KnowledgeBaseEntry`), ale nie mają jeszcze kodu. Z fazy 3
+Z fazy 2 została baza wiedzy per uczeń (`KnowledgeBaseEntry` jest w schemacie,
+ale nie ma jeszcze kodu) oraz wysyłka notatki do ucznia — dziś jest samo
+kopiowanie do schowka, a kanały Telegram/SMS żyją w module przypomnień. Z fazy 3
 zostały automatyczne wezwania do zapłaty i pełne raporty (**reguły podatkowe do
 potwierdzenia z księgowym**). Faza 4 to wsparcie AI przy notatkach.
 

@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { requirePage } from "@/lib/auth";
 import { getStudent } from "@/lib/services/students";
 import { listLessons } from "@/lib/services/lessons";
+import { listLessonNotes } from "@/lib/services/lesson-notes";
 import { getSpeakingClub } from "@/lib/services/speaking-club";
 import { getLessonPaymentStates } from "@/lib/services/billing";
 import { SpeakingClubCard } from "@/components/speaking-club-card";
@@ -14,6 +15,7 @@ import { StudentContactFields } from "@/components/student-contact-fields";
 import { StudentReminderCard } from "@/components/student-reminder-card";
 import { StudentSubjects } from "@/components/student-subjects";
 import { PaymentFlagBadge } from "@/components/billing";
+import { StudentNotesCard } from "@/components/student-notes-card";
 import { PageHeader, StudentStatusBadge } from "@/components/ui";
 
 export default async function TeacherStudentPage({
@@ -31,9 +33,10 @@ export default async function TeacherStudentPage({
     if (error instanceof NotFoundError) notFound();
     throw error;
   });
-  const [lessons, speakingClub] = await Promise.all([
+  const [lessons, speakingClub, notes] = await Promise.all([
     listLessons(actor, { studentId: student.id }),
     getSpeakingClub(actor, student.id),
+    listLessonNotes(actor, { studentId: student.id }),
   ]);
   const payments = await getLessonPaymentStates(
     actor,
@@ -107,6 +110,13 @@ export default async function TeacherStudentPage({
           <SpeakingClubCard studentId={student.id} club={speakingClub} />
 
           <StudentSubjects lessons={lessons} />
+
+          <StudentNotesCard
+            studentId={student.id}
+            notes={notes.slice(0, 3)}
+            total={notes.length}
+            notesHref="/nauczyciel/notatki"
+          />
 
           <div>
             <h2 className="mb-3 text-base font-semibold text-slate-900">

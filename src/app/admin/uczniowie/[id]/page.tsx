@@ -4,6 +4,7 @@ import { requirePage } from "@/lib/auth";
 import { getStudent } from "@/lib/services/students";
 import { listTeachers } from "@/lib/services/teachers";
 import { listLessons } from "@/lib/services/lessons";
+import { listLessonNotes } from "@/lib/services/lesson-notes";
 import { getStudentBilling, getLessonPaymentStates } from "@/lib/services/billing";
 import { getStudentRates, listSubjectLevels } from "@/lib/services/subjects";
 import { getSpeakingClub } from "@/lib/services/speaking-club";
@@ -20,6 +21,7 @@ import { StudentReminderCard } from "@/components/student-reminder-card";
 import { StudentPrivacyCard } from "@/components/student-privacy-card";
 import { StudentSubjects } from "@/components/student-subjects";
 import { BILLING_MODE_OPTIONS } from "@/components/billing";
+import { StudentNotesCard } from "@/components/student-notes-card";
 import { PageHeader, StudentStatusBadge } from "@/components/ui";
 
 export default async function AdminStudentPage({
@@ -37,7 +39,7 @@ export default async function AdminStudentPage({
     if (error instanceof NotFoundError) notFound();
     throw error;
   });
-  const [teachers, lessons, billing, rates, speakingClub, levels, privacy] =
+  const [teachers, lessons, billing, rates, speakingClub, levels, privacy, notes] =
     await Promise.all([
       listTeachers(actor, { includeInactive: true }),
       listLessons(actor, { studentId: student.id }),
@@ -46,6 +48,7 @@ export default async function AdminStudentPage({
       getSpeakingClub(actor, student.id),
       listSubjectLevels(actor),
       previewAnonymization(actor, student.id),
+      listLessonNotes(actor, { studentId: student.id }),
     ]);
   const payments = await getLessonPaymentStates(
     actor,
@@ -165,6 +168,13 @@ export default async function AdminStudentPage({
           />
 
           <StudentSubjects lessons={lessons} rates={rates.rates} />
+
+          <StudentNotesCard
+            studentId={student.id}
+            notes={notes.slice(0, 3)}
+            total={notes.length}
+            notesHref="/admin/notatki"
+          />
 
           <div>
             <h2 className="mb-3 text-base font-semibold text-slate-900">

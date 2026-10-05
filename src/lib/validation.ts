@@ -319,6 +319,37 @@ export const lessonTopicSchema = z.object({
   topic: optionalText(200),
 });
 
+// ---------- NOTATKI Z LEKCJI ----------
+
+/**
+ * Pole szablonu notatki. Puste jest w porządku — nauczyciel wypełnia tyle,
+ * ile ma do powiedzenia — ale nie zapisujemy notatki pustej w całości
+ * (patrz `lessonNoteSchema`), bo taki wiersz to sam szum na liście.
+ */
+const noteField = z
+  .union([trimmed.max(4000), z.literal(""), z.null(), z.undefined()])
+  .transform((v) => (v === "" || v === null || v === undefined ? "" : v));
+
+export const lessonNoteSchema = z
+  .object({
+    whatWeDid: noteField,
+    howItWent: noteField,
+    goal: noteField,
+    nextSteps: noteField,
+  })
+  .refine(
+    (v) => v.whatWeDid || v.howItWent || v.goal || v.nextSteps,
+    { message: "Wypełnij przynajmniej jedno pole notatki.", path: ["whatWeDid"] }
+  );
+
+export const lessonNoteFilterSchema = z.object({
+  studentId: optionalText(40),
+  /** Dla nauczyciela ignorowane — zakres i tak zawęża serwis. */
+  teacherId: optionalText(40),
+  query: optionalText(120),
+  limit: z.coerce.number().int().min(1).max(500).default(200),
+});
+
 // ---------- PRZEDMIOTY, POZIOMY I STAWKI ----------
 
 export const subjectSchema = z.object({
