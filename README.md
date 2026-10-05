@@ -610,6 +610,10 @@ Czego **nie** ma i warto o tym wiedzieć przed wystawieniem na świat:
 
 ## Wdrożenie
 
+Krok po kroku, z zaznaczaniem: **[`WDROZENIE.md`](WDROZENIE.md)** — lista
+kontrolna z kolejnością, pułapkami i tym, co się psuje po cichu.
+
+
 Potrzebny jest Postgres i host uruchamiający Node (Railway, Vercel + Neon/Supabase).
 Zmienne środowiskowe: `DATABASE_URL`, `AUTH_SECRET` oraz `SEED_ADMIN_EMAIL`
 i `SEED_ADMIN_PASSWORD` przy pierwszym seedzie — hasło **nie ma wartości
