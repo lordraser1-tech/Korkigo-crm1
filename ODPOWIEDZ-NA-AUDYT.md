@@ -160,6 +160,24 @@ PostgreSQL z wieloma połączeniami. Taki test trzeba dołożyć przy naprawie.
 
 ---
 
+## 5a. Stan napraw
+
+Zrobione (commity `86d8e76`, `7d2cc21`, `09574b0`, `5e61378`):
+
+| | Co zrobione | Dowód |
+|---|---|---|
+| **F07** | Lekcja utrwala `studentPrice` i `teacherRate`. `RateLookup` przyjmuje **lekcję**, nie parę identyfikatorów, więc policzenie historii cennikiem jest niemożliwe z definicji typu. To samo w karze za odwołanie | `tests/historical-rates.test.ts` (8); wyłączenie poprawki wywala 5 z nich objawem z P01 |
+| **F15** | Liczba miejsc po przecinku sprawdzana na **zapisie**, nie arytmetycznie. Odpada też notacja wykładnicza | 4 testy; na żywo: `1,005` w formularzu wpłaty odrzucone |
+| **F16** | Pusty tekst → `undefined` przed schematem liczbowym. Jawne `"0"` nadal znaczy zero | 3 testy |
+| **F17** | Godzina z luki DST odrzucana (kontrola powrotna). Godzina podwójna deterministycznie | 4 testy |
+| **F12** | `TRUNCATE` tylko na bazie z jawnym znacznikiem z `npm run db:test:init` | odmowa sprawdzona na bazie bez znacznika |
+| **F19** | `bankAccountSnapshot`, `taxNoteSnapshot`, `footerSnapshot`. Stare rachunki mają pas, że pokazują wartości bieżące | test: zmiana wszystkich ustawień nie rusza dokumentu |
+| **F30** | Brak `DATABASE_URL` to błąd (kod 1), nie zielony przebieg. `npm run test:unit` z jawną listą plików | sprawdzone oba tryby |
+| **F33** | Komunikat blokady zależny od roli | 2 testy: numer nieobecny u nauczyciela, obecny u admina |
+| **F34** | `.gitignore` obejmuje `.env*` z wyjątkami na przykłady | `git check-ignore` |
+
+**420 testów przechodzi** (było 398). Zostaje 13 ustaleń — poniżej.
+
 ## 6. Co bym naprawiał i w jakiej kolejności
 
 Kolejność inna niż w audycie w jednym miejscu: stawiam **F07 przed
@@ -168,18 +186,15 @@ biznesowej), a każdy tydzień zwłoki powiększa historię do naprawienia.
 
 | | Zakres | Dlaczego tu |
 |---:|---|---|
-| **1** | **F07** — utrwalać cenę ucznia i stawkę nauczyciela **na lekcji**, w chwili jej zapisu | Jedyny problem, który z czasem rośnie. Każda kolejna lekcja to kolejny wiersz bez prawdziwej historii |
-| **2** | **F15, F16, F17 (DST)** — walidacja kwot, pustych pól i godzin | Małe, zamknięte, bez decyzji biznesowych. Można zrobić od razu |
-| **3** | **F12, F34** — ochrona celu testów, `.gitignore` | Jednoliniowe, a chronią przed utratą danych i wyciekiem |
-| **4** | **F19, F33** — pełny snapshot wydruku, komunikat bez numeru rachunku dla nauczyciela | Zamykają dwie rozbieżności z dokumentacją |
+| ~~1–4~~ | ~~F07, F15, F16, F17, F12, F34, F19, F33, F30~~ | **zrobione** — patrz sekcja 5a |
 | **5** | **F04, F05, F06** — atomowość: zapis z zakresem w `where`, blokada wiersza przy fakturowaniu | Wymaga testów na natywnym PostgreSQL |
 | **6** | **F08, F09, F10** — kolizje, idempotencja wpłat, pakiet kontra rachunek | Wymaga ustalenia reguł (czy admin może nadpisać kolizję?) |
 | **7** | **F24, F29, F30, F31, F32, F18** | Eksploatacja, wydajność, dostępność |
 | **8** | **F13, F14, F21** — model rozrachunków i dziennik korekt | Największy zakres, wymaga decyzji o modelu danych |
 
-**Punkty 1–4 mogę zrobić bez żadnych ustaleń z Tobą.** Od 5 w górę część
-wymaga decyzji: co ma się dziać przy kolizji terminów, czy zaliczkę wolno
-przypisać do kilku rachunków, od kiedy obowiązuje nowa stawka.
+Od punktu 5 w górę część wymaga **Twoich decyzji**: co ma się dziać przy
+kolizji terminów, czy admin może ją nadpisać, czy zaliczkę wolno przypisać
+do kilku rachunków, od kiedy obowiązuje nowa stawka.
 
 ---
 
