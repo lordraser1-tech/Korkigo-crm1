@@ -33,7 +33,19 @@ function zoneOffsetMs(date: Date, timeZone: string): number {
   return asUtc - date.getTime();
 }
 
-/** "2026-09-20T16:00" (czas warszawski) -> Date w UTC. */
+/**
+ * "2026-09-20T16:00" (czas warszawski) -> Date w UTC.
+ *
+ * Godzina z nocy przejścia na czas letni **nie istnieje** — 29 marca 2026
+ * zegar skacze z 02:00 na 03:00, więc 02:30 nie ma. Wcześniej taka wartość
+ * przechodziła po cichu i zapisywała się jako 03:30: operacja kończyła się
+ * sukcesem o innej godzinie, niż podał użytkownik. Teraz odrzucamy ją jawnie
+ * (znalezione w audycie zewnętrznym, F17).
+ *
+ * Godziny podwójnej (jesienne cofnięcie zegara) nie da się rozróżnić z samego
+ * zapisu ściennego. Bierzemy wtedy **pierwsze** wystąpienie — deterministycznie,
+ * bo `zoneOffsetMs` liczy offset sprzed zmiany.
+ */
 export function wallClockToUtc(value: string, timeZone = APP_TIME_ZONE): Date {
   const match = WALL_CLOCK_RE.exec(value.trim());
   if (!match) throw new Error(`Nieprawidłowy format daty i godziny: ${value}`);
@@ -43,7 +55,17 @@ export function wallClockToUtc(value: string, timeZone = APP_TIME_ZONE): Date {
   // Dwie iteracje wystarczą, by trafić w poprawny offset także przy zmianie czasu.
   let utc = naive - zoneOffsetMs(new Date(naive), timeZone);
   utc = naive - zoneOffsetMs(new Date(utc), timeZone);
-  return new Date(utc);
+  const result = new Date(utc);
+
+  // Kontrola powrotna: jeśli zapis ścienny po konwersji jest inny niż podany,
+  // to podanej godziny w tej strefie po prostu nie było.
+  const wanted = `${y}-${m}-${d}T${hh}:${mm}`;
+  if (toWallClockInput(result, timeZone) !== wanted) {
+    throw new Error(
+      `Godzina ${hh}:${mm} nie istnieje ${y}-${m}-${d} (zmiana czasu) — wybierz inną.`
+    );
+  }
+  return result;
 }
 
 /** Date -> "2026-09-20T16:00" do pola <input type="datetime-local">. */

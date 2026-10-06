@@ -8,13 +8,16 @@
  */
 import { describe, expect, it } from "vitest";
 import {
+  amountSchema,
   availabilityDaySchema,
   availabilitySlotSchema,
   copyAvailabilitySchema,
   isoDate,
   lessonCreateSchema,
   monthKeySchema,
+  monthlyInvoiceSchema,
   ndgSettingsSchema,
+  packageInvoiceSchema,
   outstandingInvoiceSchema,
   subjectLevelUpdateSchema,
   timeOfDay,
@@ -92,6 +95,91 @@ describe("schematy dopisane do funkcji serwisowych", () => {
   it("czyszczenie dnia wymaga prawdziwej daty", () => {
     expect(availabilityDaySchema.safeParse({ date: "2026-13-45" }).success).toBe(false);
     expect(availabilityDaySchema.parse({ date: "2026-09-20" }).date).toBe("2026-09-20");
+  });
+});
+
+/**
+ * Znaleziska z audytu zewnętrznego (F15–F17). Każde było odtworzone na
+ * działającym kodzie, więc każde dostaje test, który padnie przy nawrocie.
+ */
+describe("kwoty (F15)", () => {
+  it("przyjmuje najwyżej dwa miejsca po przecinku", () => {
+    expect(amountSchema.parse("12,34")).toBe(12.34);
+    expect(amountSchema.parse("12.34")).toBe(12.34);
+    expect(amountSchema.parse("100")).toBe(100);
+    expect(amountSchema.parse(".5")).toBe(0.5);
+  });
+
+  /**
+   * Poprzedni warunek porównywał `Math.round(v * 100)` z `(v * 100).toFixed(0)`
+   * i dla 1,005 oba dawały 100 — trzy miejsca wchodziły do bazy mimo
+   * komunikatu, że nie wolno.
+   */
+  it("odrzuca trzecie miejsce po przecinku — także podane jako liczba", () => {
+    for (const v of ["1.005", "1,005", "0.001", "2.9999", "0.555"]) {
+      expect(amountSchema.safeParse(v).success, v).toBe(false);
+    }
+    expect(amountSchema.safeParse(1.005).success).toBe(false);
+    expect(amountSchema.safeParse(12.34).success).toBe(true);
+  });
+
+  it("odrzuca notację wykładniczą, tekst i wartości ujemne", () => {
+    for (const v of ["1e2", "abc", "-5", "", " ", "1.2.3", "Infinity", "NaN"]) {
+      expect(amountSchema.safeParse(v).success, JSON.stringify(v)).toBe(false);
+    }
+  });
+
+  it("pilnuje górnej granicy", () => {
+    expect(amountSchema.safeParse("100000").success).toBe(true);
+    expect(amountSchema.safeParse("100000.01").success).toBe(false);
+  });
+});
+
+describe("puste pola liczbowe (F16)", () => {
+  /**
+   * `.optional()` reaguje na `undefined`, a formularz przysyła pusty tekst,
+   * który `Number("")` zamieniał na 0. Pusty termin stawał się płatnością
+   * na dziś, a pusta cena pakietu zerem zamiast ceny ucznia.
+   */
+  it("pusty termin płatności to brak, nie zero", () => {
+    const pusty = monthlyInvoiceSchema.parse({
+      studentId: "s1",
+      month: "2026-09",
+      dueDays: "",
+    });
+    expect(pusty.dueDays).toBeUndefined();
+
+    const podany = monthlyInvoiceSchema.parse({
+      studentId: "s1",
+      month: "2026-09",
+      dueDays: "14",
+    });
+    expect(podany.dueDays).toBe(14);
+  });
+
+  it("pusta cena pakietu to brak, nie zero", () => {
+    const pusta = packageInvoiceSchema.parse({
+      studentId: "s1",
+      quantity: "4",
+      unitPrice: "",
+    });
+    expect(pusta.unitPrice).toBeUndefined();
+
+    const podana = packageInvoiceSchema.parse({
+      studentId: "s1",
+      quantity: "4",
+      unitPrice: "80,50",
+    });
+    expect(podana.unitPrice).toBe(80.5);
+  });
+
+  it("jawne zero nadal znaczy zero", () => {
+    const zero = monthlyInvoiceSchema.parse({
+      studentId: "s1",
+      month: "2026-09",
+      dueDays: "0",
+    });
+    expect(zero.dueDays).toBe(0);
   });
 });
 

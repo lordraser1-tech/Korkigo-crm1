@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { wallClockToUtc } from "@/lib/datetime";
 import {
   MAX_PASSWORD_LENGTH,
   checkPassword,
@@ -13,22 +14,40 @@ const optionalText = (max = 200) =>
     .union([trimmed.max(max), z.literal(""), z.null(), z.undefined()])
     .transform((v) => (v === "" || v === undefined || v === null ? null : v));
 
+/**
+ * Kwota pieniężna.
+ *
+ * Liczbę miejsc po przecinku sprawdzamy na **zapisie tekstowym**, nie
+ * arytmetycznie. Poprzednia wersja porównywała `Math.round(v * 100)`
+ * z `Number((v * 100).toFixed(0))` i nie działała: dla `1.005` oba wyrażenia
+ * dają 100, bo `1.005 * 100` to w binarnym zapisie `100.49999999999999`.
+ * Trzy miejsca po przecinku wchodziły więc do bazy mimo komunikatu, że nie
+ * wolno. Znalezione w audycie zewnętrznym (F15).
+ *
+ * Przy okazji odpada notacja wykładnicza (`1e2`), która wcześniej przechodziła
+ * jako 100 — w polu na kwotę to zawsze pomyłka albo próba obejścia.
+ */
+const MONEY_RE = /^\d+(?:[.,]\d{1,2})?$/;
+
 export const amountSchema = z
   .union([z.string(), z.number()])
-  .transform((v) => (typeof v === "number" ? v : Number(v.replace(",", ".").trim())))
-  .refine((v) => Number.isFinite(v), { message: "Podaj kwotę liczbowo." })
-  .refine((v) => v >= 0, { message: "Kwota nie może być ujemna." })
-  .refine((v) => v <= 100000, { message: "Kwota jest zbyt duża." })
-  /**
-   * UWAGA: ten warunek NIE DZIAŁA i jest tu zostawiony świadomie, dopóki nie
-   * przepiszemy obsługi kwot. `1.005` przechodzi, bo `Math.round(100.49999…)`
-   * i `Number("100")` dają to samo. Znalezione w audycie zewnętrznym (F15).
-   * Poprawka wymaga parsowania kanonicznego ciągu albo liczenia w groszach —
-   * nie samej zmiany tego wyrażenia.
-   */
-  .refine((v) => Math.round(v * 100) === Number((v * 100).toFixed(0)), {
-    message: "Maksymalnie dwa miejsca po przecinku.",
-  });
+  .transform((v, ctx) => {
+    // `String(number)` daje kanoniczny zapis, więc liczba i tekst idą tą samą
+    // ścieżką — `String(1.005)` to „1.005" i odpadnie tak samo jak wpisane.
+    const text = (typeof v === "number" ? String(v) : v).trim();
+    const normalized = text.startsWith(".") ? `0${text}` : text;
+
+    if (!MONEY_RE.test(normalized)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          "Podaj kwotę liczbowo, maksymalnie z dwoma miejscami po przecinku.",
+      });
+      return z.NEVER;
+    }
+    return Number(normalized.replace(",", "."));
+  })
+  .refine((v) => v <= 100000, { message: "Kwota jest zbyt duża." });
 
 // ---------- DATY I GODZINY ----------
 
@@ -67,7 +86,22 @@ export const wallClock = trimmed
   .refine((v) => isRealDate(v.slice(0, 10)), {
     message: "Taka data nie istnieje w kalendarzu.",
   })
-  .refine((v) => isRealTime(v.slice(11)), { message: "Taka godzina nie istnieje." });
+  .refine((v) => isRealTime(v.slice(11)), { message: "Taka godzina nie istnieje." })
+  /**
+   * Godzina z nocy przejścia na czas letni nie istnieje w strefie warszawskiej
+   * (29 marca 2026 zegar skacze z 02:00 na 03:00). `wallClockToUtc` to wykrywa
+   * i rzuca — tutaj zamieniamy to na błąd przy polu, zamiast „Coś poszło nie tak".
+   */
+  .superRefine((value, ctx) => {
+    try {
+      wallClockToUtc(value);
+    } catch {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Tej godziny nie ma w tym dniu — w nocy zmienia się czas.",
+      });
+    }
+  });
 
 /** „16:00" — sama godzina, bez dnia. */
 export const timeOfDay = trimmed
@@ -90,6 +124,20 @@ export const monthKeySchema = trimmed
 const flag = z
   .union([z.boolean(), z.literal("true"), z.literal("false")])
   .transform((v) => v === true || v === "true");
+
+/**
+ * Opcjonalne pole liczbowe z formularza.
+ *
+ * `z.coerce.number().optional()` NIE wystarcza: `.optional()` reaguje na
+ * `undefined`, a formularz przysyła pusty tekst, który `Number("")` zamienia
+ * na **0**. Pusty termin płatności stawał się więc płatnością na dziś, a pusta
+ * cena pakietu zerem zamiast ceny ucznia. Znalezione w audycie zewnętrznym (F16).
+ */
+const optionalNumber = <T extends z.ZodTypeAny>(inner: T) =>
+  z.preprocess(
+    (v) => (v === "" || v === null ? undefined : v),
+    inner.optional()
+  ) as z.ZodType<z.output<T> | undefined, z.ZodTypeDef, unknown>;
 
 /** Puste pole daty traktujemy jak brak wartości — tak samo jak w `optionalText`. */
 const optionalDate = <T extends z.ZodTypeAny>(base: T) =>
@@ -190,7 +238,7 @@ export const lessonCreateSchema = z
 
 export const lessonUpdateSchema = z.object({
   scheduledAt: wallClock.optional(),
-  durationMinutes: z.coerce.number().int().min(15).max(480).optional(),
+  durationMinutes: optionalNumber(z.coerce.number().int().min(15).max(480)),
   status: lessonStatusSchema.optional(),
 });
 
@@ -218,7 +266,7 @@ export const monthlyInvoiceSchema = z.object({
   studentId: trimmed.min(1, "Wybierz ucznia."),
   month: monthKeySchema,
   issuedAt: isoDate.optional(),
-  dueDays: z.coerce.number().int().min(0).max(120).optional(),
+  dueDays: optionalNumber(z.coerce.number().int().min(0).max(120)),
   note: optionalText(500),
 });
 
@@ -229,14 +277,14 @@ export const monthlyInvoiceSchema = z.object({
 export const outstandingInvoiceSchema = z.object({
   studentId: trimmed.min(1, "Wybierz ucznia."),
   issuedAt: isoDate.optional(),
-  dueDays: z.coerce.number().int().min(0).max(120).optional(),
+  dueDays: optionalNumber(z.coerce.number().int().min(0).max(120)),
   note: optionalText(500),
 });
 
 export const lessonInvoiceSchema = z.object({
   lessonId: trimmed.min(1, "Wskaż lekcję."),
   issuedAt: isoDate.optional(),
-  dueDays: z.coerce.number().int().min(0).max(120).optional(),
+  dueDays: optionalNumber(z.coerce.number().int().min(0).max(120)),
   note: optionalText(500),
 });
 
@@ -249,10 +297,11 @@ export const packageInvoiceSchema = z.object({
     .int("Liczba lekcji w pakiecie musi być całkowita.")
     .min(1, "Pakiet to minimum jedna lekcja.")
     .max(200, "Pakiet jest zbyt duży."),
-  unitPrice: amountSchema.optional(),
+  /** Puste = weź cenę ucznia z `StudentRate`; zero to co innego niż brak. */
+  unitPrice: optionalNumber(amountSchema),
   description: optionalText(200),
   issuedAt: isoDate.optional(),
-  dueDays: z.coerce.number().int().min(0).max(120).optional(),
+  dueDays: optionalNumber(z.coerce.number().int().min(0).max(120)),
   note: optionalText(500),
 });
 

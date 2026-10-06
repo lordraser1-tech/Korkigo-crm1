@@ -327,6 +327,26 @@ Testy: `tests/evidence.test.ts`.
 
 ## Bezpieczeństwo — reguły, których nie wolno cofnąć
 
+- **kwoty sprawdzamy na zapisie tekstowym, nie arytmetycznie** (`amountSchema`).
+  `Math.round(v * 100) === Number((v * 100).toFixed(0))` NIE działa: dla `1.005`
+  oba wyrażenia dają 100, bo `1.005 * 100` to w binarnym zapisie
+  `100.49999999999999`. Trzy miejsca po przecinku wchodziły do bazy mimo
+  komunikatu, że nie wolno (audyt zewnętrzny, F15). Teraz wzorzec
+  `^\d+(?:[.,]\d{1,2})?$` na kanonicznym zapisie — liczba idzie przez
+  `String(v)`, więc `1.005` odpada tak samo jak wpisany tekst. Przy okazji
+  odpada notacja wykładnicza,
+- **puste pole liczbowe to BRAK, nie zero** (`optionalNumber`).
+  `z.coerce.number().optional()` nie wystarcza: `.optional()` reaguje na
+  `undefined`, a formularz przysyła pusty tekst, który `Number("")` zamienia
+  na 0. Pusty termin płatności stawał się płatnością na dziś, a pusta cena
+  pakietu zerem zamiast ceny ucznia (F16). Jawne `"0"` nadal znaczy zero,
+- **godzina z nocy przejścia na czas letni jest odrzucana**
+  (`wallClockToUtc` + `wallClock`). 29 marca 2026 zegar skacze z 02:00 na
+  03:00, więc 02:30 nie istnieje — wcześniej zapisywało się po cichu jako
+  03:30, czyli operacja kończyła się sukcesem o innej godzinie (F17).
+  Kontrola jest **powrotna**: konwertujemy i porównujemy zapis ścienny.
+  Godziny podwójnej (jesień) nie da się rozróżnić z samego zapisu, więc
+  bierzemy pierwsze wystąpienie — deterministycznie,
 - **daty sprawdzamy kalendarzem, nie samym wyrażeniem regularnym**
   (`isoDate`, `wallClock`, `timeOfDay`, `monthKeySchema` w `src/lib/validation.ts`).
   `2026-13-45` przechodzi przez `^\d{4}-\d{2}-\d{2}$`, a `Date.UTC(2026, 12, 45)`
