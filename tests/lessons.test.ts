@@ -302,6 +302,50 @@ describeDb("zakres edycji lekcji cyklicznej", () => {
   });
 });
 
+/**
+ * Audyt zewnętrzny, F33: komunikat blokady ujawniał nauczycielowi numer
+ * rachunku, choć żadne zwykłe DTO numerów mu nie daje.
+ */
+describeDb("komunikat blokady a rola", () => {
+  let admin: Awaited<ReturnType<typeof createAdmin>>;
+  let anna: Awaited<ReturnType<typeof createTeacher>>;
+  let lekcja: string;
+
+  beforeEach(async () => {
+    await resetDatabase();
+    admin = await createAdmin();
+    anna = await createTeacher("anna@test.pl", 60, "Anna");
+    const uczen = await createStudent(anna.teacherProfileId, 90, "Olena");
+    lekcja = await createLesson({
+      studentId: uczen,
+      teacherId: anna.teacherProfileId,
+      scheduledAt: new Date("2026-09-07T14:00:00Z"),
+      status: "COMPLETED",
+    });
+    await createLessonInvoice(admin, { lessonId: lekcja });
+  });
+
+  /** Treść błędu, który MUSI wystąpić — inaczej test nie ma czego sprawdzać. */
+  async function komunikatBledu(actor: typeof admin | typeof anna) {
+    try {
+      await updateLesson(actor, lekcja, { durationMinutes: 90 });
+    } catch (error) {
+      return (error as Error).message;
+    }
+    throw new Error("Zmiana rozliczonej lekcji przeszła — a nie powinna.");
+  }
+
+  it("nauczyciel nie poznaje numeru rachunku z treści błędu", async () => {
+    const message = await komunikatBledu(anna);
+    expect(message).not.toMatch(/\d+\/\d{2}\/\d{4}/);
+    expect(message).toMatch(/administrator/i);
+  });
+
+  it("admin numer dostaje — to on ma rachunek odnaleźć", async () => {
+    expect(await komunikatBledu(admin)).toMatch(/\d+\/\d{2}\/\d{4}/);
+  });
+});
+
 afterAll(async () => {
   await prisma.$disconnect();
 });

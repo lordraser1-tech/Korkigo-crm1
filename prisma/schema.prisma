@@ -455,9 +455,21 @@ model Invoice {
   totalAmount Decimal @db.Decimal(10, 2)
   note        String?
 
-  // Dane wystawcy skopiowane w chwili wystawienia — wydruk ma być niezmienny
+  // Dane wystawcy skopiowane w chwili wystawienia — wydruk ma być niezmienny.
+  //
+  // `sellerSnapshot` to sklejony blok adresowy do nagłówka. Nie da się z niego
+  // wyjąć pojedynczych pól, więc stopka wydruku brała je z BIEŻĄCYCH ustawień
+  // i zmiana konta bankowego zmieniała wygląd wystawionego dokumentu
+  // (audyt zewnętrzny, F19). Stąd trzy osobne kopie poniżej.
   sellerSnapshot String? @db.Text
   buyerSnapshot  String? @db.Text
+
+  /// Numer konta z chwili wystawienia — instrukcja przelewu musi zostać ta sama.
+  bankAccountSnapshot String? @db.Text
+  /// Adnotacja podatkowa z chwili wystawienia.
+  taxNoteSnapshot     String? @db.Text
+  /// Stopka z chwili wystawienia.
+  footerSnapshot      String? @db.Text
 
   items    InvoiceItem[]
   payments Payment[]

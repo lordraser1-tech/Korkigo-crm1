@@ -159,10 +159,19 @@ Niezmienniki, których nie wolno naruszyć przy zmianach:
   `lessons.updateLesson` i `deleteLesson`),
 - rachunków nie usuwamy — `cancelInvoice()` zmienia status i zwalnia lekcje,
 - dane wystawcy trafiają na rachunek jako snapshot przy wystawieniu —
-  **ale wydruk tego nie domyka**: numer konta, adnotacja podatkowa i stopka
-  lecą z bieżących `BillingSettings` (`/admin/rachunki/[id]`), więc zmiana
-  konta zmienia wygląd już wystawionego dokumentu. Znalezione w audycie
-  zewnętrznym (F19), do naprawy,
+  **także dane płatności**. `sellerSnapshot` to sklejony blok adresowy do
+  nagłówka i nie da się z niego wyjąć pojedynczych pól, więc stopka wydruku
+  brała numer konta, adnotację i stopkę z BIEŻĄCYCH ustawień; zmiana konta
+  zmieniała wygląd dokumentu wystawionego pół roku wcześniej (audyt
+  zewnętrzny, F19). Stąd osobne `bankAccountSnapshot`, `taxNoteSnapshot`
+  i `footerSnapshot`. Rachunki sprzed tej zmiany mają je puste — wydruk
+  pokazuje im wartości bieżące i **mówi to wprost** w panelu, zamiast udawać,
+  że zna historyczne,
+- **komunikat blokady zależy od roli** (`assertNotInvoiced`): admin dostaje
+  numer rachunku, bo ma go odnaleźć i anulować; nauczyciel dostaje samą
+  informację o rozliczeniu. Numer to metadana firmy, a nauczyciel nie
+  dostaje numerów w żadnym zwykłym DTO — nie może ich poznawać przez treść
+  błędu (F33),
 - odczyt ustawień (`loadBillingSettings`) **nie zakłada rekordu** — powstaje on
   tylko przy zapisie przez admina. Wcześniej `upsert` na ścieżce odczytu
   zderzał się przy dwóch równoległych rachunkach i dawał 500,

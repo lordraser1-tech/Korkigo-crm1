@@ -109,6 +109,42 @@ describeDb("rachunki i płatności", () => {
       ).rejects.toBeInstanceOf(ForbiddenError);
     });
 
+    /**
+     * Audyt zewnętrzny, F19: `sellerSnapshot` to sklejony blok tekstu, więc
+     * stopka wydruku brała numer konta i adnotację z BIEŻĄCYCH ustawień.
+     * Zmiana konta zmieniała wygląd dokumentu wystawionego pół roku wcześniej.
+     */
+    it("rachunek kopiuje dane płatności na chwilę wystawienia", async () => {
+      await updateBillingSettings(admin, {
+        sellerName: "Mateusz Kowalczyk",
+        bankAccount: "PL11 1111 1111 1111 1111 1111 1111",
+        sellerTaxNote: "Sprzedaż nieewidencjonowana.",
+        invoiceFooter: "Dziękujemy.",
+        paymentTermDays: 7,
+      });
+
+      await completedLesson("2026-09-07");
+      const invoice = await createInvoiceForOutstandingLessons(admin, { studentId });
+
+      expect(invoice.bankAccountSnapshot).toBe("PL11 1111 1111 1111 1111 1111 1111");
+      expect(invoice.taxNoteSnapshot).toBe("Sprzedaż nieewidencjonowana.");
+      expect(invoice.footerSnapshot).toBe("Dziękujemy.");
+
+      // Zmiana ustawień NIE może ruszyć wystawionego dokumentu.
+      await updateBillingSettings(admin, {
+        sellerName: "Mateusz Kowalczyk",
+        bankAccount: "PL99 9999 9999 9999 9999 9999 9999",
+        sellerTaxNote: "Zupełnie inna adnotacja.",
+        invoiceFooter: "Inna stopka.",
+        paymentTermDays: 7,
+      });
+
+      const [po] = await listInvoices(admin);
+      expect(po.bankAccountSnapshot).toBe("PL11 1111 1111 1111 1111 1111 1111");
+      expect(po.taxNoteSnapshot).toBe("Sprzedaż nieewidencjonowana.");
+      expect(po.footerSnapshot).toBe("Dziękujemy.");
+    });
+
     it("zła data wystawienia nie tworzy rachunku", async () => {
       await completedLesson("2026-09-07");
       await expect(

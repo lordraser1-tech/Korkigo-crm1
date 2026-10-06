@@ -172,6 +172,10 @@ export type InvoiceDto = {
   note: string | null;
   sellerSnapshot: string | null;
   buyerSnapshot: string | null;
+  /** Dane płatności z chwili wystawienia; `null` dla rachunków sprzed F19. */
+  bankAccountSnapshot: string | null;
+  taxNoteSnapshot: string | null;
+  footerSnapshot: string | null;
   items: InvoiceItemDto[];
 };
 
@@ -188,6 +192,9 @@ const INVOICE_SELECT = {
   note: true,
   sellerSnapshot: true,
   buyerSnapshot: true,
+  bankAccountSnapshot: true,
+  taxNoteSnapshot: true,
+  footerSnapshot: true,
   student: { select: { firstName: true, lastName: true } },
   items: {
     select: {
@@ -242,6 +249,9 @@ function mapInvoice(row: InvoiceRow, now = new Date()): InvoiceDto {
     note: row.note,
     sellerSnapshot: row.sellerSnapshot,
     buyerSnapshot: row.buyerSnapshot,
+    bankAccountSnapshot: row.bankAccountSnapshot,
+    taxNoteSnapshot: row.taxNoteSnapshot,
+    footerSnapshot: row.footerSnapshot,
     items: row.items.map((item) => ({
       id: item.id,
       description: item.description,
@@ -412,6 +422,10 @@ async function createInvoice(draft: InvoiceDraft): Promise<InvoiceDto> {
             note: draft.note,
             sellerSnapshot,
             buyerSnapshot,
+            // Osobne kopie, bo ze sklejonego bloku nie da się wyjąć pól.
+            bankAccountSnapshot: settings.bankAccount || null,
+            taxNoteSnapshot: settings.sellerTaxNote || null,
+            footerSnapshot: settings.invoiceFooter || null,
             items: {
               create: draft.items.map((item) => ({
                 description: item.description,

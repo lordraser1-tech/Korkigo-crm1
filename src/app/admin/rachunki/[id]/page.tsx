@@ -39,6 +39,25 @@ export default async function AdminInvoicePage({
   );
 
   const seller = invoice.sellerSnapshot || settings.sellerName;
+
+  /**
+   * Wydruk bierze dane z chwili wystawienia, nie z bieżących ustawień —
+   * inaczej zmiana konta bankowego zmieniałaby wygląd dokumentu wystawionego
+   * pół roku wcześniej (audyt zewnętrzny, F19).
+   *
+   * Rachunki sprzed tej poprawki nie mają czego skopiować. Pokazujemy im
+   * wartości bieżące i mówimy to wprost, zamiast udawać, że znamy historyczne.
+   */
+  const hasPrintSnapshot =
+    invoice.bankAccountSnapshot !== null ||
+    invoice.taxNoteSnapshot !== null ||
+    invoice.footerSnapshot !== null;
+
+  const bankAccount = hasPrintSnapshot
+    ? invoice.bankAccountSnapshot
+    : settings.bankAccount;
+  const taxNote = hasPrintSnapshot ? invoice.taxNoteSnapshot : settings.sellerTaxNote;
+  const footer = hasPrintSnapshot ? invoice.footerSnapshot : settings.invoiceFooter;
   const period =
     invoice.periodStart && invoice.periodEnd
       ? `${formatDate(new Date(invoice.periodStart))} – ${formatDate(
@@ -164,15 +183,15 @@ export default async function AdminInvoicePage({
             <p className="mt-6 text-sm text-slate-700">Uwagi: {invoice.note}</p>
           ) : null}
 
-          {settings.bankAccount ? (
+          {bankAccount ? (
             <p className="mt-6 text-sm text-slate-700">
-              Płatność przelewem na konto: <strong>{settings.bankAccount}</strong>
+              Płatność przelewem na konto: <strong>{bankAccount}</strong>
             </p>
           ) : null}
 
           <footer className="mt-10 border-t border-slate-200 pt-4 text-xs text-slate-500">
-            <p>{settings.sellerTaxNote}</p>
-            {settings.invoiceFooter ? <p className="mt-1">{settings.invoiceFooter}</p> : null}
+            <p>{taxNote}</p>
+            {footer ? <p className="mt-1">{footer}</p> : null}
             <p className="mt-6 text-slate-400">
               Rachunek wystawiony bez podpisu odbiorcy.
             </p>
@@ -180,6 +199,14 @@ export default async function AdminInvoicePage({
         </article>
 
         <div className="no-print space-y-4">
+          {hasPrintSnapshot ? null : (
+            <p className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+              Ten rachunek wystawiono zanim zapisywaliśmy dane płatności przy
+              dokumencie. Numer konta, adnotacja i stopka na wydruku pochodzą
+              z <strong>bieżących</strong> ustawień, więc mogą się różnić od tego,
+              co uczeń dostał wtedy. Nowe rachunki mają już własną kopię.
+            </p>
+          )}
           <div className="card p-5">
             <h2 className="mb-4 text-base font-semibold text-slate-900">
               Zapisz wpłatę

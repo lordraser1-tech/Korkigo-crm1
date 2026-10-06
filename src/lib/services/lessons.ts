@@ -342,14 +342,22 @@ async function assertNotPaidOut(lessonId: string): Promise<void> {
   }
 }
 
-async function assertNotInvoiced(lessonId: string): Promise<void> {
+/**
+ * Komunikat zależy od roli. Numer rachunku to metadana firmy: nauczyciel nie
+ * dostaje numerów ani kwot w żadnym zwykłym DTO, więc nie może ich poznawać
+ * tylnymi drzwiami, przez treść błędu (audyt zewnętrzny, F33). Admin numer
+ * dostaje, bo to on ma ten rachunek odnaleźć i anulować.
+ */
+async function assertNotInvoiced(lessonId: string, actor: Actor): Promise<void> {
   const item = await prisma.invoiceItem.findUnique({
     where: { lessonId },
     select: { invoice: { select: { number: true, status: true } } },
   });
   if (item && item.invoice.status !== "CANCELLED") {
     throw new ValidationError(
-      `Lekcja jest ujęta na rachunku ${item.invoice.number} — najpierw anuluj rachunek.`
+      actor.role === "ADMIN"
+        ? `Lekcja jest ujęta na rachunku ${item.invoice.number} — najpierw anuluj rachunek.`
+        : "Ta lekcja jest już rozliczona — zmianę zgłoś administratorowi."
     );
   }
 }
@@ -385,7 +393,7 @@ export async function updateLesson(
     );
   }
 
-  await assertNotInvoiced(id);
+  await assertNotInvoiced(id, actor);
   await assertNotPaidOut(id);
 
   const update: Prisma.LessonUpdateInput = {};
@@ -492,7 +500,7 @@ export async function cancelLesson(
     },
   });
   if (!lesson) throw new NotFoundError("Nie znaleziono lekcji.");
-  await assertNotInvoiced(id);
+  await assertNotInvoiced(id, actor);
   await assertNotPaidOut(id);
 
   const reportedAt = data.reportedAt ? wallClockToUtc(data.reportedAt) : now;
@@ -619,7 +627,7 @@ export async function deleteLesson(actor: Actor, id: string): Promise<void> {
     actor.role === "ADMIN" ? { id } : { id, teacherId: actor.teacherProfileId };
   const visible = await prisma.lesson.findFirst({ where, select: { id: true } });
   if (!visible) throw new NotFoundError("Nie znaleziono lekcji.");
-  await assertNotInvoiced(id);
+  await assertNotInvoiced(id, actor);
   await assertNotPaidOut(id);
   await tombstoneGoogleEvents({ id });
 
