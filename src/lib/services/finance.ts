@@ -57,8 +57,13 @@ export async function getTeacherEarnings(
     where: { teacherId, scheduledAt: { gte: from, lt: to } },
     select: {
       status: true,
+      teacherId: true,
       studentId: true,
       subjectLevelId: true,
+      // Stawki utrwalone przy lekcji — bez nich liczylibyśmy cennik bieżący
+      // i podwyżka zmieniałaby zamknięty miesiąc (F07).
+      teacherRate: true,
+      studentPrice: true,
       subjectLevel: {
         select: { name: true, subject: { select: { name: true } } },
       },
@@ -84,7 +89,7 @@ export async function getTeacherEarnings(
     completed += 1;
     // Brak stawki (np. skasowanej po fakcie) liczymy jako zero, żeby widok
     // się nie wysypał — admin i tak zobaczy zaniżoną kwotę i ją uzupełni.
-    const amount = rates.teacher(teacherId, lesson.subjectLevelId) ?? 0;
+    const amount = rates.teacherFor(lesson) ?? 0;
     total += amount;
 
     const name = `${lesson.student.firstName} ${lesson.student.lastName}`;
@@ -169,6 +174,8 @@ export async function getAdminFinanceSummary(
       teacherId: true,
       studentId: true,
       subjectLevelId: true,
+      teacherRate: true,
+      studentPrice: true,
       teacher: { select: { firstName: true, lastName: true } },
     },
   });
@@ -180,10 +187,8 @@ export async function getAdminFinanceSummary(
   let cost = 0;
 
   for (const lesson of lessons) {
-    const studentRate =
-      rates.student(lesson.studentId, lesson.subjectLevelId) ?? 0;
-    const teacherRate =
-      rates.teacher(lesson.teacherId, lesson.subjectLevelId) ?? 0;
+    const studentRate = rates.studentFor(lesson) ?? 0;
+    const teacherRate = rates.teacherFor(lesson) ?? 0;
     revenue += studentRate;
     cost += teacherRate;
 

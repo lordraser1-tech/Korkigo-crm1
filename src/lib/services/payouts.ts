@@ -61,7 +61,13 @@ async function unpaidLessons(teacherId: string): Promise<{
       id: true,
       status: true,
       scheduledAt: true,
+      teacherId: true,
+      studentId: true,
       subjectLevelId: true,
+      // Stawka utrwalona przy lekcji: podwyżka nie może zmienić kwoty
+      // należnej za pracę sprzed podwyżki (F07).
+      teacherRate: true,
+      studentPrice: true,
     },
     orderBy: { scheduledAt: "asc" },
   });
@@ -72,7 +78,7 @@ async function unpaidLessons(teacherId: string): Promise<{
   );
 
   const amount = qualifying.reduce(
-    (sum, lesson) => sum + (rates.teacher(teacherId, lesson.subjectLevelId) ?? 0),
+    (sum, lesson) => sum + (rates.teacherFor(lesson) ?? 0),
     0
   );
 

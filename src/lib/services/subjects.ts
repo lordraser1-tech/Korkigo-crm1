@@ -461,9 +461,32 @@ export async function getStudentRateMatrix(
 
 // ---------- WYSZUKIWANIE STAWEK (używane przez inne serwisy) ----------
 
+/**
+ * Minimum, jakiego potrzeba, żeby odczytać stawki JEDNEJ lekcji. Snapshot
+ * wygrywa z cennikiem — i to jest wymuszone kształtem typu, nie dyscypliną
+ * wołającego.
+ */
+export type LessonRates = {
+  teacherId: string;
+  studentId: string;
+  subjectLevelId: string;
+  teacherRate: Prisma.Decimal | null;
+  studentPrice: Prisma.Decimal | null;
+};
+
 export type RateLookup = {
-  teacher: (teacherId: string, subjectLevelId: string) => number | null;
-  student: (studentId: string, subjectLevelId: string) => number | null;
+  /**
+   * Stawka nauczyciela ZA TĘ LEKCJĘ. Bierze utrwaloną wartość, a do cennika
+   * bieżącego sięga tylko dla lekcji sprzed wprowadzenia snapshotu.
+   */
+  teacherFor: (lesson: LessonRates) => number | null;
+  /** Cena ucznia ZA TĘ LEKCJĘ — ta sama zasada. */
+  studentFor: (lesson: LessonRates) => number | null;
+  /**
+   * Cennik BIEŻĄCY. Wyłącznie do wyceny czegoś, co powstaje teraz (pakiet
+   * przedpłacony). **Nigdy do historii** — od tego są `teacherFor`/`studentFor`.
+   */
+  currentStudent: (studentId: string, subjectLevelId: string) => number | null;
 };
 
 const key = (ownerId: string, levelId: string) => `${ownerId}|${levelId}`;
@@ -501,11 +524,21 @@ export async function loadRateLookup(options?: {
     ])
   );
 
+  const currentTeacher = (teacherId: string, subjectLevelId: string) =>
+    teacherMap.get(key(teacherId, subjectLevelId)) ?? null;
+  const currentStudent = (studentId: string, subjectLevelId: string) =>
+    studentMap.get(key(studentId, subjectLevelId)) ?? null;
+
   return {
-    teacher: (teacherId, subjectLevelId) =>
-      teacherMap.get(key(teacherId, subjectLevelId)) ?? null,
-    student: (studentId, subjectLevelId) =>
-      studentMap.get(key(studentId, subjectLevelId)) ?? null,
+    teacherFor: (lesson) =>
+      lesson.teacherRate !== null
+        ? toAmount(lesson.teacherRate)
+        : currentTeacher(lesson.teacherId, lesson.subjectLevelId),
+    studentFor: (lesson) =>
+      lesson.studentPrice !== null
+        ? toAmount(lesson.studentPrice)
+        : currentStudent(lesson.studentId, lesson.subjectLevelId),
+    currentStudent,
   };
 }
 

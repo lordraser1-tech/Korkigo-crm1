@@ -515,7 +515,13 @@ async function billableLessons(
       id: true,
       scheduledAt: true,
       status: true,
+      teacherId: true,
+      studentId: true,
       subjectLevelId: true,
+      // Cena z dnia lekcji, nie dzisiejsza — inaczej podwyżka przepisywałaby
+      // kwotę starej, niezafakturowanej lekcji (F07).
+      studentPrice: true,
+      teacherRate: true,
       cancellationAmount: true,
       subjectLevel: {
         select: { name: true, subject: { select: { name: true } } },
@@ -533,10 +539,10 @@ async function billableLessons(
       status: row.status,
       subjectLevelId: row.subjectLevelId,
       label: `${row.subjectLevel.subject.name} · ${row.subjectLevel.name}`,
-      price: rates.student(studentId, row.subjectLevelId),
+      price: rates.studentFor(row),
       charge: lessonChargeAmount({
         status: row.status,
-        price: rates.student(studentId, row.subjectLevelId) ?? 0,
+        price: rates.studentFor(row) ?? 0,
         cancellationAmount:
           row.cancellationAmount === null
             ? null
@@ -715,7 +721,8 @@ export async function createPackageInvoice(
   let packageLabel = "";
   if (data.subjectLevelId) {
     const rates = await loadRateLookup({ studentIds: [student.id] });
-    const fromRate = rates.student(student.id, data.subjectLevelId);
+    // Pakiet powstaje DZIŚ, więc bierze cennik bieżący — i tylko tutaj.
+    const fromRate = rates.currentStudent(student.id, data.subjectLevelId);
     const level = await prisma.subjectLevel.findUnique({
       where: { id: data.subjectLevelId },
       select: { name: true, subject: { select: { name: true } } },
@@ -1149,7 +1156,13 @@ async function loadBillingStates(
           id: true,
           scheduledAt: true,
           status: true,
+          teacherId: true,
+          studentId: true,
           subjectLevelId: true,
+          // Cena z dnia lekcji — saldo ucznia nie może zmieniać się po
+          // zmianie cennika (F07).
+          studentPrice: true,
+          teacherRate: true,
           cancellationAmount: true,
         },
       },
@@ -1186,13 +1199,13 @@ async function loadBillingStates(
           status: lesson.status,
           charge: lessonChargeAmount({
             status: lesson.status,
-            price: rates.student(student.id, lesson.subjectLevelId) ?? 0,
+            price: rates.studentFor(lesson) ?? 0,
             cancellationAmount:
               lesson.cancellationAmount === null
                 ? null
                 : toAmount(lesson.cancellationAmount),
           }),
-          price: rates.student(student.id, lesson.subjectLevelId) ?? 0,
+          price: rates.studentFor(lesson) ?? 0,
           monthKey: toWallClockInput(lesson.scheduledAt).slice(0, 7),
         })),
         payments: student.payments.map((payment) => toAmount(payment.amount)),

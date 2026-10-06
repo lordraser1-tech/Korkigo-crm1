@@ -568,7 +568,11 @@ export async function getFinancialStats(
       where: { status: "COMPLETED", scheduledAt: { gte: from, lt: to } },
       select: {
         teacherId: true,
+        studentId: true,
         subjectLevelId: true,
+        // Koszt liczony stawką z dnia lekcji, nie dzisiejszym cennikiem (F07).
+        teacherRate: true,
+        studentPrice: true,
         teacher: { select: { firstName: true, lastName: true } },
       },
     }),
@@ -608,7 +612,7 @@ export async function getFinancialStats(
   const rates = await loadRateLookup();
   let cost = 0;
   for (const lesson of lessons) {
-    const rate = rates.teacher(lesson.teacherId, lesson.subjectLevelId) ?? 0;
+    const rate = rates.teacherFor(lesson) ?? 0;
     cost += rate;
     const row = ensureRow(
       lesson.teacherId,

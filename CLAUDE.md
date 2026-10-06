@@ -152,6 +152,19 @@ Ta granica jest świadoma: nauczyciel ma wiedzieć, że uczeń zalega, ale nie i
 
 Niezmienniki, których nie wolno naruszyć przy zmianach:
 
+- **kwota raz naliczona jest niezmienna.** Lekcja utrwala cenę ucznia
+  (`Lesson.studentPrice`) i stawkę nauczyciela (`Lesson.teacherRate`) w chwili
+  zapisu. Bez tego rozliczenia, zarobki, wypłaty, marża i statystyki czytały
+  cennik BIEŻĄCY — podwyżka zmieniała zarobek za zamknięty miesiąc, a stara
+  niezafakturowana lekcja dostawała nową cenę (audyt zewnętrzny, F07).
+  **`RateLookup` wymusza to kształtem typu**: `teacherFor(lesson)`
+  i `studentFor(lesson)` przyjmują lekcję, nie parę identyfikatorów, więc nie
+  da się przez pomyłkę policzyć historii cennikiem. Jedyny dozwolony odczyt
+  cennika bieżącego to `currentStudent()` i służy wyłącznie do wyceny pakietu,
+  który powstaje TERAZ. Lekcje sprzed tej zmiany mają `null` i tylko dla nich
+  wracamy do cennika — uzupełnienie ich dzisiejszą stawką utrwaliłoby błąd
+  jako „historię". To samo dotyczy kary za odwołanie
+  (`studentPriceForLesson` w `lessons.ts`),
 - numeracja `1/09/2026` jest ciągła i resetuje się co miesiąc; numer nadaje się
   w transakcji, a anulowany rachunek **nie** zwalnia numeru,
 - jedna lekcja może trafić na jeden rachunek (`InvoiceItem.lessonId` @unique),
@@ -186,7 +199,8 @@ W karcie ucznia kafelek „Rozliczenia” pokazuje lekcje naliczone bez rachunku
 wraz z kwotą i wystawia rachunek dokładnie na nie
 (`createInvoiceForOutstandingLessons`).
 
-Testy tych reguł: `tests/billing.test.ts`. Przy zmianach w rozliczeniach
+Testy tych reguł: `tests/billing.test.ts`, a niezmienność historycznych kwot
+osobno w `tests/historical-rates.test.ts`. Przy zmianach w rozliczeniach
 **dopisz tam przypadek**.
 
 ## Grafik (zakładka „Grafik i dyspozycja”)

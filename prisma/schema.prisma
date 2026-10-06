@@ -291,6 +291,15 @@ model Lesson {
   /// liczy się próg 24h/12h z regulaminu.
   cancelledReportedAt    DateTime?
   /// Kwota wynikająca z regulaminu (do audytu korekt).
+  /// Cena ucznia i stawka nauczyciela UTRWALONE przy zapisie lekcji.
+  ///
+  /// Bez nich rozliczenia czytały cennik bieżący, więc zmiana stawki
+  /// przepisywała zamknięty miesiąc: zarobek za wrzesień zmieniał się
+  /// w październiku (audyt zewnętrzny, F07). Lekcje sprzed tej zmiany mają
+  /// `null` i dla nich — tylko dla nich — wracamy do cennika bieżącego.
+  studentPrice Decimal? @db.Decimal(10, 2)
+  teacherRate  Decimal? @db.Decimal(10, 2)
+
   cancellationAutoAmount Decimal?  @db.Decimal(10, 2)
   /// Kwota faktycznie naliczona uczniowi (po ewentualnej korekcie admina).
   cancellationAmount     Decimal?  @db.Decimal(10, 2)

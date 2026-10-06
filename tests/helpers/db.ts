@@ -223,16 +223,42 @@ export async function createLesson(options: {
   scheduledAt: Date;
   status?: LessonStatus;
   subjectLevelId?: string;
+  /**
+   * `true` zostawia `studentPrice` i `teacherRate` puste — tak wyglądają
+   * lekcje zapisane przed wprowadzeniem snapshotu stawek. Do testowania
+   * ścieżki awaryjnej, która wraca wtedy do cennika bieżącego.
+   */
+  bezSnapshotuStawek?: boolean;
 }): Promise<string> {
+  const subjectLevelId = options.subjectLevelId ?? defaultLevelId;
+
+  /**
+   * Helper zapisuje lekcję wprost w bazie, z pominięciem `createLessons()`,
+   * więc musi sam utrwalić stawki — inaczej testy omijałyby dokładnie ten
+   * mechanizm, który mają sprawdzać (F07).
+   */
+  const [teacherRate, studentRate] = await Promise.all([
+    prisma.teacherRate.findUnique({
+      where: { teacherId_subjectLevelId: { teacherId: options.teacherId, subjectLevelId } },
+      select: { amount: true },
+    }),
+    prisma.studentRate.findUnique({
+      where: { studentId_subjectLevelId: { studentId: options.studentId, subjectLevelId } },
+      select: { amount: true },
+    }),
+  ]);
+
   const lesson = await prisma.lesson.create({
     data: {
       studentId: options.studentId,
       teacherId: options.teacherId,
-      subjectLevelId: options.subjectLevelId ?? defaultLevelId,
+      subjectLevelId,
       scheduledAt: options.scheduledAt,
       durationMinutes: 60,
       type: "ONE_OFF",
       status: options.status ?? "SCHEDULED",
+      studentPrice: options.bezSnapshotuStawek ? null : studentRate?.amount ?? null,
+      teacherRate: options.bezSnapshotuStawek ? null : teacherRate?.amount ?? null,
     },
   });
   return lesson.id;

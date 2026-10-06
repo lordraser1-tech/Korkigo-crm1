@@ -250,7 +250,10 @@ export async function createLessons(
 
   // Lekcja bez ustalonych stawek nie powstaje — inaczej trafiłaby na rachunek
   // jako darmowa i wypaczyła zarówno wypłatę, jak i saldo ucznia.
-  await resolveLessonRates({
+  //
+  // Wynik UTRWALAMY przy lekcji. Bez tego rozliczenia czytały cennik bieżący
+  // i zmiana stawki przepisywała zamknięty miesiąc (audyt zewnętrzny, F07).
+  const pricing = await resolveLessonRates({
     teacherId: target.teacherId,
     studentId: target.studentId,
     subjectLevelId: data.subjectLevelId,
@@ -267,6 +270,8 @@ export async function createLessons(
     durationMinutes: data.durationMinutes,
     type: data.type,
     seriesId,
+    studentPrice: new Prisma.Decimal(pricing.studentAmount.toFixed(2)),
+    teacherRate: new Prisma.Decimal(pricing.teacherAmount.toFixed(2)),
   }));
 
   await prisma.lesson.createMany({ data: rows });
@@ -322,6 +327,30 @@ async function tombstoneGoogleEvents(
       calendarId: calendarFor.get(lesson.teacherId) ?? "primary",
     })),
   });
+}
+
+/**
+ * Cena ucznia ZA TĘ LEKCJĘ. Utrwalona przy zapisie wygrywa z cennikiem
+ * bieżącym — bez tego kara za odwołanie liczyłaby się po dzisiejszej cenie,
+ * choć dotyczy zajęć sprzed podwyżki (audyt zewnętrzny, F07).
+ */
+async function studentPriceForLesson(lesson: {
+  studentId: string;
+  subjectLevelId: string;
+  studentPrice: Prisma.Decimal | null;
+}): Promise<number> {
+  if (lesson.studentPrice !== null) return toAmount(lesson.studentPrice);
+
+  const rate = await prisma.studentRate.findUnique({
+    where: {
+      studentId_subjectLevelId: {
+        studentId: lesson.studentId,
+        subjectLevelId: lesson.subjectLevelId,
+      },
+    },
+    select: { amount: true },
+  });
+  return rate ? toAmount(rate.amount) : 0;
 }
 
 async function assertNotPaidOut(lessonId: string): Promise<void> {
@@ -497,6 +526,7 @@ export async function cancelLesson(
       studentId: true,
       scheduledAt: true,
       subjectLevelId: true,
+      studentPrice: true,
     },
   });
   if (!lesson) throw new NotFoundError("Nie znaleziono lekcji.");
@@ -505,16 +535,7 @@ export async function cancelLesson(
 
   const reportedAt = data.reportedAt ? wallClockToUtc(data.reportedAt) : now;
 
-  const rate = await prisma.studentRate.findUnique({
-    where: {
-      studentId_subjectLevelId: {
-        studentId: lesson.studentId,
-        subjectLevelId: lesson.subjectLevelId,
-      },
-    },
-    select: { amount: true },
-  });
-  const price = rate ? toAmount(rate.amount) : 0;
+  const price = await studentPriceForLesson(lesson);
   const autoAmount = cancellationCharge(price, lesson.scheduledAt, reportedAt);
 
   let finalAmount = autoAmount;
@@ -559,23 +580,19 @@ export async function previewCancellation(
 ): Promise<{ price: number; percent: number; amount: number }> {
   const lesson = await prisma.lesson.findFirst({
     where: { id, ...lessonScope(actor) },
-    select: { scheduledAt: true, studentId: true, subjectLevelId: true },
+    select: {
+      scheduledAt: true,
+      studentId: true,
+      subjectLevelId: true,
+      studentPrice: true,
+    },
   });
   if (!lesson) throw new NotFoundError("Nie znaleziono lekcji.");
 
   const reportedAt = reportedAtWallClock
     ? wallClockToUtc(reportedAtWallClock)
     : now;
-  const rate = await prisma.studentRate.findUnique({
-    where: {
-      studentId_subjectLevelId: {
-        studentId: lesson.studentId,
-        subjectLevelId: lesson.subjectLevelId,
-      },
-    },
-    select: { amount: true },
-  });
-  const price = rate ? toAmount(rate.amount) : 0;
+  const price = await studentPriceForLesson(lesson);
 
   return {
     price,
