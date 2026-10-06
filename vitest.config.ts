@@ -10,6 +10,23 @@ if (existsSync(".env.test")) {
   }
 }
 
+/**
+ * Bez bazy testy integracyjne były po cichu pomijane, a `npm test` kończył się
+ * sukcesem — 7 przeszło, 119 pominiętych, kod wyjścia zero. CI mogło więc
+ * raportować zielono, nie sprawdziwszy ani finansów, ani uprawnień
+ * (audyt zewnętrzny, F30).
+ *
+ * Teraz brak `DATABASE_URL` to **twardy błąd konfiguracji**. Kto chce samych
+ * testów bez bazy, mówi to wprost: `npm run test:unit`.
+ */
+if (!process.env.DATABASE_URL && process.env.KORKIGO_TESTY_BEZ_BAZY !== "1") {
+  throw new Error(
+    "Brak DATABASE_URL — testy integracyjne zostałyby po cichu pominięte.\n" +
+      "  • pełny zestaw:  skopiuj .env.test.example do .env.test i wykonaj `npm run db:test:init`\n" +
+      "  • same testy bez bazy: `npm run test:unit`"
+  );
+}
+
 export default defineConfig({
   test: {
     environment: "node",

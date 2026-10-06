@@ -2,8 +2,13 @@ node_modules/
 .next/
 out/
 build/
-.env
-.env*.local
+# Wszystkie pliki środowiska PRÓCZ przykładów. Wcześniej wzorce obejmowały
+# `.env`, `.env*.local` i `.env.test`, ale nie `.env.production` — pierwszy
+# plik o innej nazwie wszedłby do repozytorium razem z sekretami
+# (audyt zewnętrzny, F34).
+.env*
+!.env.example
+!.env.test.example
 *.log
 npm-debug.log*
 .DS_Store
@@ -11,6 +16,3 @@ next-env.d.ts
 .vercel
 *.tsbuildinfo
 coverage/
-
-# lokalna konfiguracja testów
-.env.test

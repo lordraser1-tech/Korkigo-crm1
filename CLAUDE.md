@@ -327,6 +327,14 @@ Testy: `tests/evidence.test.ts`.
 
 ## Bezpieczeństwo — reguły, których nie wolno cofnąć
 
+- **testy kasują tylko bazę z jawnym znacznikiem** (`_korkigo_test_database`,
+  zakładany przez `npm run db:test:init`). Wcześniej wystarczyła dowolna
+  niepusta `DATABASE_URL`, więc `npm test` w powłoce z produkcyjną zmienną
+  kasował firmie dane (audyt zewnętrzny, F12). Znacznika **nie wolno** tworzyć
+  automatycznie w `resetDatabase()` — wtedy nie chroniłby przed niczym.
+  Osobno: brak `DATABASE_URL` to twardy błąd `npm test`, a nie 119 po cichu
+  pominiętych testów i kod wyjścia zero (F30); same testy bez bazy mają własne
+  polecenie `npm run test:unit` z jawną listą plików,
 - **kwoty sprawdzamy na zapisie tekstowym, nie arytmetycznie** (`amountSchema`).
   `Math.round(v * 100) === Number((v * 100).toFixed(0))` NIE działa: dla `1.005`
   oba wyrażenia dają 100, bo `1.005 * 100` to w binarnym zapisie

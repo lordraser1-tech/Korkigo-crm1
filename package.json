@@ -15,7 +15,9 @@
     "db:push": "prisma db push",
     "db:studio": "prisma studio",
     "db:seed": "tsx --env-file-if-exists=.env prisma/seed.ts",
-    "db:seed:demo": "tsx --env-file-if-exists=.env prisma/seed.ts --demo"
+    "db:seed:demo": "tsx --env-file-if-exists=.env prisma/seed.ts --demo",
+    "db:test:init": "tsx --env-file-if-exists=.env.test scripts/init-test-database.ts",
+    "test:unit": "KORKIGO_TESTY_BEZ_BAZY=1 vitest run tests/datetime.test.ts tests/middleware.test.ts tests/password-policy.test.ts tests/policy.test.ts tests/qr.test.ts tests/rate-limit.test.ts tests/totp.test.ts tests/validation.test.ts"
   },
   "prisma": {
     "seed": "tsx --env-file-if-exists=.env prisma/seed.ts"

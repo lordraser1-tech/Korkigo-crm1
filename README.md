@@ -490,8 +490,21 @@ o 16:00 również po zmianie czasu letniego na zimowy.
 createdb korkigo_test
 cp .env.test.example .env.test        # osobna baza — testy ją czyszczą!
 DATABASE_URL=... npx prisma migrate deploy
-npm test
+npm run db:test:init                  # JEDNORAZOWO: zgoda na kasowanie tej bazy
+npm test                              # pełny zestaw
+npm run test:unit                     # tylko testy niewymagające bazy
 ```
+
+Dwie rzeczy chronią przed pomyłką, która kosztuje dane:
+
+- **`npm test` bez `DATABASE_URL` kończy się błędem**, nie zielonym przebiegiem.
+  Wcześniej 119 testów integracyjnych było po cichu pomijanych, a polecenie
+  zwracało sukces — CI mogło raportować zielono, nie sprawdziwszy ani finansów,
+  ani uprawnień,
+- **testy kasują wyłącznie bazę z założonym znacznikiem** (`npm run db:test:init`).
+  Znacznik zakłada się raz i świadomie; sam przebieg testów go nie tworzy, bo
+  wtedy nie chroniłby przed niczym. Uruchomienie testów w powłoce z produkcyjną
+  `DATABASE_URL` kończy się odmową przed pierwszym kasującym SQL-em.
 
 Testy pokrywają m.in.: zakres widoczności uczniów i lekcji, brak stawki ucznia
 w odpowiedziach dla nauczyciela, odmowę zmiany stawek przez nauczyciela,

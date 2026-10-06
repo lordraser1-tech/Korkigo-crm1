@@ -43,7 +43,45 @@ export function getDefaultLevelId(): string {
   return defaultLevelId;
 }
 
+/**
+ * Nazwa tabeli-znacznika. Jej **obecność** jest zgodą na kasowanie zawartości
+ * tej bazy. Tworzy ją wyłącznie `npm run db:test:init`, nigdy sam przebieg
+ * testów — gdyby powstawała automatycznie, znacznik nie chroniłby przed niczym.
+ */
+const MARKER_TABLE = "_korkigo_test_database";
+
+let markerChecked = false;
+
+/**
+ * Twarda odmowa dla niezatwierdzonego celu, PRZED pierwszym kasującym SQL-em.
+ *
+ * Wcześniej wystarczyła dowolna niepusta `DATABASE_URL`: operator, który
+ * uruchomił `npm test` w powłoce z produkcyjną zmienną, kasował firmie dane
+ * (audyt zewnętrzny, F12). Sama nazwa zawierająca „test" to za słaba jedyna
+ * ochrona — dlatego decyduje znacznik, który trzeba założyć świadomie.
+ */
+async function assertTestDatabase(): Promise<void> {
+  if (markerChecked) return;
+
+  const rows = await prisma.$queryRawUnsafe<Array<{ exists: boolean }>>(
+    `SELECT to_regclass('public."${MARKER_TABLE}"') IS NOT NULL AS "exists"`
+  );
+  if (!rows[0]?.exists) {
+    const [{ db }] = await prisma.$queryRawUnsafe<Array<{ db: string }>>(
+      "SELECT current_database() AS db"
+    );
+    throw new Error(
+      `Baza „${db}" nie jest oznaczona jako testowa, a testy kasują całą jej ` +
+        `zawartość. Jeśli to NA PEWNO baza testowa, wykonaj raz:\n\n` +
+        `  npm run db:test:init\n\n` +
+        `Jeśli nie — sprawdź DATABASE_URL, bo wskazuje gdzie indziej.`
+    );
+  }
+  markerChecked = true;
+}
+
 export async function resetDatabase(): Promise<void> {
+  await assertTestDatabase();
   await prisma.$executeRawUnsafe(
     `TRUNCATE TABLE "message_recipients", "messages",
      "ndg_monthly_limits", "ndg_settings",
