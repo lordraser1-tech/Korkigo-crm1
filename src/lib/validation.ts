@@ -19,6 +19,13 @@ export const amountSchema = z
   .refine((v) => Number.isFinite(v), { message: "Podaj kwotę liczbowo." })
   .refine((v) => v >= 0, { message: "Kwota nie może być ujemna." })
   .refine((v) => v <= 100000, { message: "Kwota jest zbyt duża." })
+  /**
+   * UWAGA: ten warunek NIE DZIAŁA i jest tu zostawiony świadomie, dopóki nie
+   * przepiszemy obsługi kwot. `1.005` przechodzi, bo `Math.round(100.49999…)`
+   * i `Number("100")` dają to samo. Znalezione w audycie zewnętrznym (F15).
+   * Poprawka wymaga parsowania kanonicznego ciągu albo liczenia w groszach —
+   * nie samej zmiany tego wyrażenia.
+   */
   .refine((v) => Math.round(v * 100) === Number((v * 100).toFixed(0)), {
     message: "Maksymalnie dwa miejsca po przecinku.",
   });

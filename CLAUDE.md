@@ -158,7 +158,11 @@ Niezmienniki, których nie wolno naruszyć przy zmianach:
 - lekcja ujęta na nieanulowanym rachunku jest zamrożona (blokada w
   `lessons.updateLesson` i `deleteLesson`),
 - rachunków nie usuwamy — `cancelInvoice()` zmienia status i zwalnia lekcje,
-- dane wystawcy trafiają na rachunek jako snapshot przy wystawieniu,
+- dane wystawcy trafiają na rachunek jako snapshot przy wystawieniu —
+  **ale wydruk tego nie domyka**: numer konta, adnotacja podatkowa i stopka
+  lecą z bieżących `BillingSettings` (`/admin/rachunki/[id]`), więc zmiana
+  konta zmienia wygląd już wystawionego dokumentu. Znalezione w audycie
+  zewnętrznym (F19), do naprawy,
 - odczyt ustawień (`loadBillingSettings`) **nie zakłada rekordu** — powstaje on
   tylko przy zapisie przez admina. Wcześniej `upsert` na ścieżce odczytu
   zderzał się przy dwóch równoległych rachunkach i dawał 500,

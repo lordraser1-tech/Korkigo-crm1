@@ -183,6 +183,13 @@ Rzeczy, których naruszenie oznacza błąd w pieniądzach. Wszystkie mają test.
 
 **Jak sprawdzić:** `npx vitest run tests/billing.test.ts tests/payouts.test.ts tests/policy.test.ts`
 
+> **Sprostowanie po audycie zewnętrznym (F07).** Powyższej listy **brakuje
+> najważniejszego niezmiennika**: kwota raz naliczona ma zostać niezmienna.
+> Lekcja nie utrwala ceny ucznia ani stawki nauczyciela — rozliczenia czytają
+> wartości **bieżące**, więc zmiana stawki przepisuje historię. Tego
+> niezmiennika nie postawiłem, więc i testu nie ma. Szczegóły:
+> [`ODPOWIEDZ-NA-AUDYT.md`](ODPOWIEDZ-NA-AUDYT.md).
+
 ---
 
 ## 6. Bezpieczeństwo — reguły i gdzie siedzą
@@ -335,6 +342,18 @@ Nie są błędami — są decyzjami. Audytor powinien je ocenić, nie odkryć.
 | Zero stawek podatkowych w kodzie (NDG, PIT) | moduły liczą to, co wpisze użytkownik; w UI stoi jawne zastrzeżenie |
 
 ---
+
+## 9a. Wynik audytu zewnętrznego (6.10.2026)
+
+Projekt przeszedł niezależny audyt. Badana kopia odpowiadała commitowi
+`333cf94`, czyli 15 commitów wstecz, co audytor zaznaczył. **22 z 34 ustaleń
+są nadal aktualne**, w tym brak utrwalania stawek przy lekcji, niedziałająca
+kontrola dwóch miejsc po przecinku w kwotach i wydruk rachunku korzystający
+z bieżących ustawień zamiast snapshotu.
+
+Pełna weryfikacja każdego ustalenia wobec aktualnego kodu:
+[`ODPOWIEDZ-NA-AUDYT.md`](ODPOWIEDZ-NA-AUDYT.md). **Czytaj ją razem z tym
+dokumentem** — trzy twierdzenia stąd zostały tam sprostowane.
 
 ## 10. Czego NIE sprawdzono
 
